@@ -1,0 +1,23 @@
+parse_config:
+  raw_binding_map:
+    "&mkp MB1": 左click
+    "&mkp MB2": 右click
+    "&mkp MB3": 中click
+    "&studio_unlock": Studio解除
+    "&bootloader": BOOT
+    "&sys_reset": RESET
+  trans_legend:
+    t: "▽"
+    type: trans
+  zmk_keycode_map:
+    INT_MUHENKAN: 無変換
+    INT_HENKAN: 変換
+    LEFT_BRACKET: "["
+    RIGHT_BRACKET: "]"
+
+draw_config:
+  n_columns: 2
+  draw_key_sides: true
+  dark_mode: auto
+  append_colon_to_layer_header: false
+  footer_text: "CLine46 — <a href='https://github.com/3110/zmk_config_CLine46'>3110/zmk_config_CLine46</a>"
