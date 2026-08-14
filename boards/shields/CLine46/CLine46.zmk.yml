@@ -2,7 +2,9 @@ file_format: "1"
 id: CLine46
 name: CLine46
 type: shield
-url: https://github.com/takamaru-fpv/zmk-config-CLine45
+url: https://github.com/takamaru-fpv/zmk_config_CLine46
 requires: [seeeduino_xiao_ble]
 features:
   - keys
+  - pointer
+  - studio
