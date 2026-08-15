@@ -104,6 +104,29 @@
 - 読むだけならロックされたままでも大半は見えますが、**編集には `&studio_unlock`** が必要です
   (SCROLL レイヤー + 位置42。「主要バインド」の表を参照)
 
+#### BLE で接続する
+
+> **USB ケーブルを抜いてから接続してください。**
+> ZMK の Studio RPC は**キー入力の出力先(選択中のエンドポイント)と同じ経路にしか応答しません**
+> (`zmk/app/src/studio/rpc.c` の `refresh_selected_transport()`)。USB が繋がっていると
+> 出力先が USB になり、BLE の GATT に書き込んでも応答が返らず、ブラウザ側は
+> **`Connection timed out: the device did not respond.`** で失敗します。
+> USB を挿したまま使いたい場合は、Connection タブの**出力優先度を `BLE` に切り替え**ます
+> (その間はキー入力も BLE 側に流れます)。
+
+1. USB を抜く(または出力優先度を BLE にする)
+2. キーボードで **`&studio_unlock`** を押す — アクティブなプロファイル宛に directed advertising が始まり、Web Bluetooth から見つけられる状態になります
+3. DYA Studio のスプラッシュ画面で **Bluetooth** を選び、デバイス選択で **CLine46** を選ぶ
+
+見つからないときは、**もう一度 `&studio_unlock` を押してから**接続し直してください
+(アンロック時に広告が始まる仕組みなので、時間が経つと止まります)。
+macOS の Chrome でダイアログに何も出ない場合は、システム設定 → プライバシーとセキュリティ →
+Bluetooth で Chrome を許可してください。
+
+BLE 接続中は応答を速くするため `CONFIG_ZMK_STUDIO_TRANSPORT_BLE_PREF_LATENCY=0` を指定しています。
+既定の 10 のままだと接続間隔 15ms と合わせて 1 往復 165ms かかり、操作がもたつきます。
+効くのは Studio が接続されている間だけなので、普段の電池持ちには影響しません。
+
 ### タブごとの機能
 
 | タブ | できること | 効かせているモジュール |
@@ -169,6 +192,38 @@ OS の判別は USB なら列挙時のやり取り、BLE なら GATT の読ま�
 
 > レイヤー1〜3(SYMBOL / MOUSE / SCROLL)はホールドして使うモーメンタリなレイヤーなので、
 > 既定レイヤーには選ばないでください。
+
+## 元リポジトリとの違い
+
+fork 元の [takamaru-fpv/zmk_config_CLine46](https://github.com/takamaru-fpv/zmk_config_CLine46)
+から意図的に変えている点です。**上流を取り込むときはここを潰さないよう注意**してください。
+
+### キーマップ
+
+| 違い | 効果・理由 |
+|---|---|
+| **SCROLL レイヤーに `&bootloader` と `&sys_reset` を配置**(位置4〜7) | 上流には無い。**押した側の半分だけ**がブートローダーに入る(この振る舞いは `locality = EVENT_SOURCE` による)。左手を焼くのにリセットボタンを2度押ししなくて済むので、書き込みが明らかに楽 |
+| コンボを `cormoran,runtime-combo-defaults` で定義 | DYA Studio から編集できる。上流は `zmk,combos` のままで編集不可。位置も違う(こちらは Q+W / W+E、`require-prior-idle-ms = <125>` 付き) |
+| `&lt` に `flavor = "balanced"` / `quick-tap-ms = <175>` | 既定の `tap-preferred` だと 200ms 待たないとレイヤーが有効にならず、MOUSE レイヤーのクリックが機能しない |
+| レイヤーに `display-name`(BASE / SYMBOL) | Studio のタブに名前が出る |
+| レイヤー4〜6を `status = "reserved"` | Studio から使う空きレイヤーとして確保。上流は `&trans` で埋めた実レイヤー |
+| `behaviors/runtime_macro.dtsi` と `behaviors/default_layer.dtsi` を include | `&rmacro`(マクロ)と `&df`(既定レイヤー)をキーに割り当て可能にする |
+
+### ファームウェア構成
+
+| 違い | 効果・理由 |
+|---|---|
+| **左手にも custom-settings と split relay を残す** | 上流は左手から削除している。削ると Settings タブから左手のアイドル/スリープ設定を触れなくなる |
+| **watchdog を左手にも入れる** | 左手自身のフリーズ・クラッシュの記録が残る。中継で右手経由から読める |
+| トラックボールの physical-layout ノードを定義 | 上流はモジュールを入れているがノードが無く、プレビューに何も描かれない |
+| `default-layer` は `codex/custom-rpc-rewrite`、`os-detection` も追加 | 上流が指す `main` にはビヘイビア(`&df`)しか無く、Connection タブから設定できない |
+| バッテリー履歴を無効 | 見る手段が無いため(「既知の事項」参照) |
+| kscan diagnostics の左手中継を無効 | Web UI 未実装のため。統計は左右とも取れる |
+| `sensor-rotate` を入れない | ロータリーエンコーダー用のモジュールで、CLine46 には載っていない |
+| `CONFIG_ZMK_STUDIO_TRANSPORT_BLE_PREF_LATENCY=0` | BLE 経由の Studio 操作を軽くする |
+| `BT_PERIPHERAL_PREF_MIN_INT` は `12` のまま | 上流は `6`(7.5ms)に下げている。低遅延だが電池を食うため追随していない |
+| PMW3610 の `RUN_DOWNSHIFT_TIME_MS` / `REST1_SAMPLE_TIME_MS` を残す | 上流は既定値に戻した。こちらは現状の挙動で問題が無いため維持 |
+| `zephyr/module.yml` の名前、`CLine46.zmk.yml` の URL と features、`draw.yml` のパスを修正 | 上流は `CLine45` や `roBa` の残骸が残っている |
 
 ## ビルド
 
