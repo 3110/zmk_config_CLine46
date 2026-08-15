@@ -55,6 +55,19 @@ manifest:
       remote: cormoran
       revision: d9490e7b5d41c516221d131241009e81740efcee
 
+    # 切り分け用のモジュール。押下キーの可視化とハード診断で、
+    # 「押したキーがどの position として認識されているか」を
+    # DYA Studio 上で確認できるようにするためのもの
+    - name: zmk-feature-input-stream
+      remote: cormoran
+      revision: aeb015908a42a7615ccdccc7feb3a10d23132a71
+    - name: zmk-feature-device-info
+      remote: cormoran
+      revision: 8cedd2dd9f04e19ea5a17b94914dd47a09d8db11
+    - name: zmk-feature-kscan-diagnostics
+      remote: cormoran
+      revision: 1432f7fe0cfe903cd7d3c9931ae6bd6f2e1f328e
+
     # その他のモジュール
     - name: zmk-pmw3610-driver
       remote: badjeff
