@@ -100,7 +100,7 @@
 ### 接続と前提
 
 - ブラウザは **Chrome / Edge**(Web Serial / Web Bluetooth)。iOS は Bluefy、Android は Chrome(BLE のみ)
-- 接続は **USB(右手を挿す)** か **BLE**。窓口は常に**右手(Central)**で、左手の情報は右手経由で中継されます
+- 接続は **USB(右手を挿す)** か **BLE**。窓口は常に**右手**(Central)で、左手の情報は右手経由で中継されます
 - 読むだけならロックされたままでも大半は見えますが、**編集には `&studio_unlock`** が必要です
   (SCROLL レイヤー + 位置42。「主要バインド」の表を参照)
 
