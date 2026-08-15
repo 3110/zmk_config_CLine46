@@ -15,6 +15,26 @@
         compatible = "zmk,input-listener";
         device = <&trackball>;
     };
+
+    // DYA Studio のプレビューにトラックボールを描くためのノード。
+    // 見た目だけの情報で、動作には影響しない。
+    // 座標と大きさはキーの物理レイアウト（CLine46.dtsi）と同じ単位で、
+    // キー1つが 100。右手親指列の x=1000〜1200 が空いているので、
+    // その中央にキーと同じ直径 100 を置いている（実物のボールがキーと
+    // 同じ大きさに見えるため）。位置がずれていたら x/y を調整する。
+    // linked-* は、描いたトラックボールを Trackball タブの設定に結び付ける
+    // ためのもの。こちらの入力プロセッサは mouse だけ（scroll は
+    // zip_* を使っていて runtime input processor ではない）
+    trackball_layout: trackball_layout {
+        compatible = "cormoran,physical-layout-trackball";
+        display-name = "Trackball";
+        size = <100>;
+        x = <1050>;
+        y = <300>;
+
+        linked-device-identifiers = "mouse";
+        linked-subsystems = "cormoran_rip";
+    };
 };
 
 &pinctrl {
