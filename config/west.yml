@@ -68,6 +68,32 @@ manifest:
       remote: cormoran
       revision: 1432f7fe0cfe903cd7d3c9931ae6bd6f2e1f328e
 
+    # 接続先ごとの既定レイヤー。
+    # main 側にはビヘイビア（&df）しか無く Studio RPC が入っていないため、
+    # DYA Studio の Connection タブから設定するには custom-rpc-rewrite の
+    # 方が必要（cormoran 氏自身も dya2 でこちらを使っている）。
+    # ブランチ名のとおり作業中の系統なので SHA で固定する。
+    # なお import: true は使わない。このモジュールの west 依存が
+    # custom-settings を main で参照しており、上で SHA 固定している
+    # ものと衝突するため（west update がエラーになる）
+    - name: zmk-feature-default-layer
+      remote: cormoran
+      # codex/custom-rpc-rewrite @ 2026-07-15
+      revision: b25cb5b324da2d9bbc84e1877c775f5b2b7c6845
+    # default-layer の zephyr/module.yml が build.depends で os-detection を
+    # 要求するため、機能を使わなくてもモジュールを置いておく必要がある
+    # （無いと「Unmet or cyclic dependencies in modules」で configure が
+    # 止まる）。CONFIG_ZMK_OS_DETECTION は無効なのでコードは入らない
+    - name: zmk-feature-os-detection
+      remote: cormoran
+      # main @ 2026-07-19
+      revision: 3052679f645b8fc1997275c2eaa6b86bdd55ca01
+
+    # ハングやフォールトの記録と自動復帰
+    - name: zmk-feature-watchdog
+      remote: cormoran
+      revision: 84ad14c6c3645dc40b23f45d08ab45418655f912
+
     # その他のモジュール
     - name: zmk-pmw3610-driver
       remote: badjeff

@@ -11,6 +11,11 @@
 // キーマップエディタから Runtime Macro を選んでスロット番号を指定できる
 #include <behaviors/runtime_macro.dtsi>
 
+// 既定レイヤーを変えるビヘイビア(&df)の実体。設定自体は DYA Studio の
+// Connection タブからできるので、キーに割り当てるかは好み
+// (&df DF_INC = 候補を巡回 / &df DF_SEL N = レイヤー N を既定にする)
+#include <behaviors/default_layer.dtsi>
+
 &mt {
     flavor = "balanced";
     quick-tap-ms = <0>;
