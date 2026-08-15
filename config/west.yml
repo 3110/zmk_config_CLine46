@@ -10,33 +10,57 @@ manifest:
       url-base: https://github.com/takamaru-fpv
 
   projects:
-    # ZMK: DYA Studio 用カスタム RPC サブシステム付き cormoran fork
+    # ZMK: DYA Studio 用カスタム RPC サブシステム付き cormoran fork。
+    # v0.3 系ではマクロ/コンボのモジュールが Zephyr 3.7 以降の書き方
+    # (configdefault / ROM_SECTIONS)を使っていて通らなかったため、
+    # main+dya(Zephyr v4.1.0+zmk-fixes)に移行した。
+    # Zephyr は ZMK 側の app/west.yml から入るのでここで指定しない
     - name: zmk
       remote: cormoran
-      revision: v0.3-branch+dya
+      # main+dya @ 2026-07-25 (Zephyr v4.1.0+zmk-fixes)
+      revision: e5c9b6915b56801193e359dd9bad4a167ce0d1b8
       import: app/west.yml
     - name: zmk-feature-non-lipo-battery-management
       remote: takamaru-fpv
       revision: voltage_division
 
-    # DYA Studio モジュール（すべて cormoran リポジトリ）
+    # DYA Studio モジュール（すべて cormoran リポジトリ）。
+    # main 追従で breaking change の実績があるため、タグのあるもの以外は
+    # コミット SHA で固定する
     - name: zmk-module-ble-management
       remote: cormoran
-      revision: zmk-v0.3.0.0
+      # main @ 2026-07-05 (このモジュールには zmk-v0.4.0.0 タグが未発行)
+      revision: 57738cc4fc6ba80e82a7ac57741a0339cb186cd4
     - name: zmk-module-battery-history
       remote: cormoran
-      revision: main
+      # main @ 2026-02-24 (タグ無し)
+      revision: 307755dd2ad4d320e14de162e8e5ef018f29d929
     - name: zmk-module-settings-rpc
       remote: cormoran
-      revision: main
+      # main @ 2026-07-06 (このモジュールには zmk-v0.4.0.0 タグが未発行)
+      revision: 78f86df9e6c5edaf57bef3ccbd7f360cfdf49291
     - name: zmk-module-runtime-input-processor
       remote: cormoran
-      revision: zmk-v0.3.0.0
+      revision: zmk-v0.4.0.0
+
+    # マクロ/コンボを DYA Studio から編集するためのモジュール。
+    # zmk-feature-custom-settings は他 2 つの依存
+    - name: zmk-feature-custom-settings
+      remote: cormoran
+      revision: c6a7fef3a3be3d3ace5de9a4b0628c6418cd1f3f
+    - name: zmk-feature-runtime-macro
+      remote: cormoran
+      revision: 38530962eb7061b60efcb98e84585cfb1f0cb6de
+    - name: zmk-feature-runtime-combo
+      remote: cormoran
+      revision: d9490e7b5d41c516221d131241009e81740efcee
+
+    # その他のモジュール
     - name: zmk-pmw3610-driver
       remote: badjeff
-      revision: zmk-0.3
+      revision: main
     - name: zmk-rgbled-widget
       remote: caksoylar
-      revision: v0.3-branch
+      revision: main
   self:
     path: config

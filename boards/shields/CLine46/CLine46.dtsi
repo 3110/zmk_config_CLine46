@@ -127,3 +127,9 @@
         reg = <0>;
     };
 };
+
+// D2 を GPIO として使うための NFC ピン無効化。Zephyr 4.1 で
+// CONFIG_NFCT_PINS_AS_GPIOS が廃止され、UICR の指定に変わった
+&uicr {
+    nfct-pins-as-gpios;
+};

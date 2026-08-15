@@ -18,7 +18,8 @@ config ZMK_POINTING
 config SPI
     default y
 
-config PMW3610
+# badjeff のドライバは main 系で PMW3610_ALT に改名された
+config PMW3610_ALT
     default y
 
 endif
@@ -26,8 +27,8 @@ endif
 
 if SHIELD_CLINE46_R || SHIELD_CLINE46_L
 
-config NFCT_PINS_AS_GPIOS
-    default y
+# NFCT_PINS_AS_GPIOS は Zephyr 4.1 で Kconfig から devicetree の
+# &uicr { nfct-pins-as-gpios; } に移された(CLine46.dtsi 参照)
 
 config ZMK_SPLIT
     default y

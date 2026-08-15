@@ -17,11 +17,17 @@
 #     artifact-name: corne_left_with_logging
 #
 ---
+# ZMK 4.1(Zephyr hwmv2)でボード名が seeeduino_xiao_ble から
+# xiao_ble//zmk に変わった。artifact-name を付けているのは、
+# uf2 のファイル名がボード名の変更で変わらないようにするため
 include:
- - board: seeeduino_xiao_ble
+ - board: xiao_ble//zmk
    shield: CLine46_R rgbled_adapter
    snippet: studio-rpc-usb-uart
- - board: seeeduino_xiao_ble
+   artifact-name: CLine46_R
+ - board: xiao_ble//zmk
    shield: CLine46_L rgbled_adapter
- - board: seeeduino_xiao_ble
+   artifact-name: CLine46_L
+ - board: xiao_ble//zmk
    shield: settings_reset
+   artifact-name: settings_reset
