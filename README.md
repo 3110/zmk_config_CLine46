@@ -14,7 +14,7 @@
 | ポインティング | PMW3610 トラックボール(右手側、SPI0 / CS=P0.09 / IRQ=D8) |
 | 電池 | NiMH 単セル(1.02〜1.36V) |
 | Central | **右手**(トラックボール側) |
-| ZMK Studio | 対応(DYA Studio 拡張込み)。**マクロとコンボも編集可** |
+| ZMK Studio | 対応(DYA Studio 拡張込み)。マクロ・コンボ・接続・診断まで編集可([一覧](#dya-studio-でできること)) |
 | ベース | [cormoran/zmk](https://github.com/cormoran/zmk) `main+dya` @ `e5c9b69`(Zephyr 4.1) |
 
 ## キーマップ
@@ -89,6 +89,69 @@
 24 25 26 27 28 29   |  30 31 32 33 34 35
    36 37 38 39 40 41 | 42 43     44 45
 ```
+
+## DYA Studio でできること
+
+[DYA Studio](https://studio.dya.cormoran.works) は [ZMK Studio](https://zmk.studio/) の代替 Web UI です。
+[cormoran](https://github.com/cormoran) 氏の ZMK fork とモジュール群に対応していて、
+**ファームを焼き直さずに変えられる範囲が ZMK Studio より広い**のが利点です。
+このリポジトリはそれを使う前提の構成にしてあります。
+
+### 接続と前提
+
+- ブラウザは **Chrome / Edge**(Web Serial / Web Bluetooth)。iOS は Bluefy、Android は Chrome(BLE のみ)
+- 接続は **USB(右手を挿す)** か **BLE**。窓口は常に**右手(Central)**で、左手の情報は右手経由で中継されます
+- 読むだけならロックされたままでも大半は見えますが、**編集には `&studio_unlock`** が必要です
+  (SCROLL レイヤー + 位置42。「主要バインド」の表を参照)
+
+### タブごとの機能
+
+| タブ | できること | 効かせているモジュール |
+|---|---|---|
+| **Keymap** | キー割り当て、レイヤーの追加・並べ替え・リネーム。**Stream** スイッチを入れると押したキーがプレビュー上で光る | ZMK Studio 標準 + `input-stream` |
+| **Macro&Combo** | マクロの作成・編集・リネーム・削除、コンボの位置/ビヘイビア/タイムアウト/対象レイヤーの編集 | `runtime-macro` / `runtime-combo` / `custom-settings` |
+| **Trackball** | 感度(0.1〜10倍)、回転、軸スナップ、スクロール、オートマウスレイヤー。入力プロセッサ単位・レイヤー単位で指定 | `runtime-input-processor` |
+| **Connection** | BLE プロファイルの改名・切替・ペアリング解除、USB と BLE の出力優先度、**OS 判別の確認と手動上書き**、**接続先ごと・OS ごとの既定レイヤー** | `ble-management` / `os-detection` / `default-layer` |
+| **Settings** | 左右それぞれのアイドル/スリープのタイムアウト、詳細設定 | `settings-rpc`(左手の分は `custom-settings` の中継) |
+| **Troubleshooting** | 電池残量、FW のビルド情報と稼働時間、キースイッチ診断(チャタリング)、**watchdog の記録(左右とも)**、サポートレポートのコピー | `device-info` / `kscan-diagnostics` / `watchdog` |
+
+### このファームではできないこと
+
+| できないこと | 理由 |
+|---|---|
+| バッテリー履歴のグラフ | 無効にしています(「既知の事項」参照) |
+| トラックボールのセンサー生画像・CPI 変更 | cormoran 版 PMW3610 ドライバ専用の機能。こちらは badjeff 版を使っています |
+| **左手側**のキー配線の表示 | ファームの中継は完成していますが Web UI 側が未実装。打鍵・チャタリングの統計は左右とも取れます |
+| プレビューにトラックボールを描画 | `physical-layout` モジュールを入れていません |
+
+### 保存の考え方
+
+DYA Studio の変更は**2段階**です。ここを取り違えると「設定したのに再起動で消えた」ことになります。
+
+1. **メモリへの書き込み** — 即時反映されるが電源を切ると消える。未保存の項目には緑のドットが付きます
+2. **保存** — フラッシュへ永続化。再起動しても残ります
+
+戻すときは3通りあります。
+
+| 操作 | 効果 |
+|---|---|
+| Discard / 破棄 | 未保存の変更だけを捨てて、保存済みの値に戻す |
+| **Reset to Default**(コンボなど項目単位) | その項目だけ `.keymap` に書いた既定値へ戻す |
+| **Restore Stock Settings** | 設定領域を全消去してコンパイル時の状態へ。**マクロは設定領域にしか無いので消えます** |
+
+### OS ごとに既定レイヤーを変える
+
+1. Studio のキーマップエディタで、**予約してある 4〜6 のレイヤー**に OS ごとの差分キーを置く
+   (レイヤー0は常に有効なので、**変えたいキーだけ**置けば足ります)
+2. Connection タブで接続先の「デフォルトレイヤー」を **「OS 検出に従う」** にする
+3. 「OS ごとのデフォルトレイヤー」で macOS → 4、Windows → 5 のように割り当てる
+
+OS の判別は USB なら列挙時のやり取り、BLE なら GATT の読まれ方の癖から推定します。
+接続のたびに一定時間(USB 200ms / BLE 1000ms)静まってから確定するので、
+繋いだ直後の一瞬は unknown 扱いです。外したときは同じ画面で手動上書きできます。
+
+> レイヤー1〜3(SYMBOL / MOUSE / SCROLL)はホールドして使うモーメンタリなレイヤーなので、
+> 既定レイヤーには選ばないでください。
 
 ## ビルド
 
@@ -177,8 +240,8 @@ west build -s zmk/app -d build/left -b xiao_ble//zmk -- \
 | `boards/shields/CLine46/CLine46.dtsi` | 左右共通のハード定義(物理レイアウト、マトリクス、kscan、電池) |
 | `boards/shields/CLine46/CLine46_R.overlay` | 右手固有。列オフセット、SPI、PMW3610、入力プロセッサ |
 | `boards/shields/CLine46/CLine46_L.overlay` | 左手固有 |
-| `boards/shields/CLine46/CLine46_R.conf` | 右手の Kconfig。PMW3610、ZMK Studio、DYA Studio |
-| `boards/shields/CLine46/CLine46_L.conf` | 左手の Kconfig。電池、スリープ |
+| `boards/shields/CLine46/CLine46_R.conf` | 右手の Kconfig。PMW3610、ZMK Studio、DYA Studio 用モジュール一式 |
+| `boards/shields/CLine46/CLine46_L.conf` | 左手の Kconfig。電池、スリープ、右手からの設定中継、watchdog |
 | `boards/shields/CLine46/Kconfig.defconfig` | シールド選択時の既定 Kconfig |
 | `.github/workflows/build.yml` | ファームウェアのビルド |
 | `.github/workflows/draw.yml` | キーマップ図の生成(手動実行) |
@@ -213,6 +276,20 @@ west build -s zmk/app -d build/left -b xiao_ble//zmk -- \
   URL は開発用サーバ(`http://localhost:5173`)がハードコードされているだけのため、
   記録しても見る手段がありません(DYA Studio 上ではリンクが繋がらない項目として
   見えるだけ)。見る場合はモジュールの `web/` を自分で動かします
+- **キースイッチ診断に左手の配線が出ません**(`Devices: 1` のまま)。ファーム側の中継は
+  完成していますが Web UI 側が未実装のためで、そのぶんの中継は切ってあります
+  (`CONFIG_ZMK_KSCAN_DIAGNOSTICS_SPLIT=n`)。打鍵・チャタリングの統計は左右とも
+  取れているので、診断の実用面は落ちていません。UI が対応したときに戻す手順は
+  `CLine46_R.conf` のコメントにあります
+- **watchdog の監視タイマーが BLE の無線タイミングと稀に干渉しうる**と、モジュールの
+  DESIGN.md に書かれています。接続が不安定になったら Troubleshooting の記録を見て、
+  FREEZE が記録されていれば watchdog が仕事をした結果、記録が空なのに再起動している
+  なら干渉を疑い、`CONFIG_ZMK_WATCHDOG_FREEZE_MONITOR_LOWPRIO_QUEUE=n` で
+  タイマー負荷を半分にします
+- **`zmk-feature-default-layer` だけ `codex/custom-rpc-rewrite` ブランチを指しています。**
+  `main` にはビヘイビア(`&df`)しか無く Studio RPC が入っていないため、Connection タブ
+  から設定できません。`zmk-feature-os-detection` は機能を使う/使わないに関わらず、
+  `default-layer` の `zephyr/module.yml` が `build.depends` で要求するので必須です
 - **v0.3 系には戻せません。** マクロ/コンボのモジュールが Zephyr 3.7 以降でしか
   通らない書き方(`configdefault`、`zephyr_linker_sources` の `ROM_SECTIONS`)を
   使っているためです。v0.3 で動かすには
