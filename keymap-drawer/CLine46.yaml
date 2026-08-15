@@ -188,8 +188,3 @@ layers:
   - {t: ▽, type: trans}
   - {t: ▽, type: trans}
   - {t: ▽, type: trans}
-combos:
-- p: [1, 2]
-  k: TAB
-- p: [2, 3]
-  k: Sft+TAB
