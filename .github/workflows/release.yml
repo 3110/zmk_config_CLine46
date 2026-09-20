@@ -50,9 +50,26 @@ jobs:
             *) echo "::error::タグ名は v から始めてください（例: v1.1.0）: $VERSION"; exit 1 ;;
           esac
 
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" >/dev/null 2>&1; then
-            echo "::error::タグ $VERSION はすでにあります"
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "::error::リリース $VERSION はすでにあります"
             exit 1
+          fi
+
+          # タグが先にある場合は、それを使う（gh release create は既存タグを
+          # そのまま使い、無ければ --target のコミット上に作る）。ただし別の
+          # コミットを指していると、添付する uf2 と中身が食い違うので止める
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --jq '.object.sha' 2>/dev/null || true)"
+          if [ -n "$tag_sha" ]; then
+            tag_type="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --jq '.object.type')"
+            if [ "$tag_type" = "tag" ]; then
+              # 注釈付きタグはタグオブジェクトを指すので、コミットまで辿る
+              tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha" --jq '.object.sha')"
+            fi
+            if [ "$tag_sha" != "$GITHUB_SHA" ]; then
+              echo "::error::タグ $VERSION は別のコミット($tag_sha)を指しています。$GITHUB_SHA をリリースするならタグを消すか、そのコミットから実行してください"
+              exit 1
+            fi
+            echo "既存のタグ $VERSION を使います"
           fi
 
           notes="${NOTES_PATH:-docs/release-notes/$VERSION.md}"
