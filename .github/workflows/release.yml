@@ -23,6 +23,11 @@ on:
         required: false
         default: false
         type: boolean
+      retag:
+        description: "タグが別のコミットを指しているとき、打ち直す"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -41,6 +46,7 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
           NOTES_PATH: ${{ inputs.notes_path }}
+          RETAG: ${{ inputs.retag }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -66,10 +72,14 @@ jobs:
               tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha" --jq '.object.sha')"
             fi
             if [ "$tag_sha" != "$GITHUB_SHA" ]; then
-              echo "::error::タグ $VERSION は別のコミット($tag_sha)を指しています。$GITHUB_SHA をリリースするならタグを消すか、そのコミットから実行してください"
-              exit 1
+              if [ "$RETAG" != "true" ]; then
+                echo "::error::タグ $VERSION は別のコミット($tag_sha)を指しています。$GITHUB_SHA に打ち直すなら retag を true にして実行してください"
+                exit 1
+              fi
+              echo "タグ $VERSION を打ち直します（$tag_sha → $GITHUB_SHA）。付け替えはリリース作成の直前に行います"
+            else
+              echo "既存のタグ $VERSION を使います"
             fi
-            echo "既存のタグ $VERSION を使います"
           fi
 
           notes="${NOTES_PATH:-docs/release-notes/$VERSION.md}"
@@ -104,6 +114,7 @@ jobs:
           TITLE: ${{ inputs.title }}
           NOTES: ${{ needs.check.outputs.notes_path }}
           DRAFT: ${{ inputs.draft }}
+          RETAG: ${{ inputs.retag }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -114,6 +125,14 @@ jobs:
             exit 1
           fi
           printf '添付する uf2: %s\n' "${uf2[@]}"
+
+          # 打ち直しの指定があり、タグが別のコミットを指しているなら消す。
+          # ここまで来ていればビルドは成功しているので、消し損にはならない
+          if [ "$RETAG" = "true" ] \
+            && gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" >/dev/null 2>&1; then
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$VERSION"
+            echo "タグ $VERSION を削除しました（$GITHUB_SHA に作り直します）"
+          fi
 
           args=(--target "$GITHUB_SHA" --title "${TITLE:-$VERSION}" --notes-file "$NOTES")
           if [ "$DRAFT" = "true" ]; then

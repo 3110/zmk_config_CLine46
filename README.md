@@ -375,6 +375,7 @@ west build -s zmk/app -d build/left -b xiao_ble//zmk -- \
    | `title` | リリースのタイトル。省略するとタグ名だけになる |
    | `notes_path` | ノートの場所。省略すると `docs/release-notes/<タグ名>.md` |
    | `draft` | 下書きで作りたいときだけ `true` |
+   | `retag` | すでにあるタグを別のコミットに打ち直すときだけ `true` |
 
 タグの重複とノートの有無は**ビルド前**に確かめるので、入力を間違えても数分待たされません。
 ビルドは `build.yml` と同じ手順で、できた uf2(左右と `settings_reset`)がそのまま
