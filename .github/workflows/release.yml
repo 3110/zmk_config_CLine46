@@ -1,0 +1,106 @@
+name: Release
+
+# タグを打って、ファームウェア(uf2)を添付したリリースを作る。
+# Actions の「Run workflow」から実行する。タグは gh release create が
+# 対象コミット上に作るので、手元で git tag を打つ必要は無い。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "タグ名（例: v1.1.0）"
+        required: true
+        type: string
+      title:
+        description: "リリースのタイトル（省略するとタグ名だけ）"
+        required: false
+        type: string
+      notes_path:
+        description: "リリースノート（省略すると docs/release-notes/<タグ名>.md）"
+        required: false
+        type: string
+      draft:
+        description: "下書きとして作る（公開前に中身を確認したいとき）"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  # ビルドに数分かかるので、タグの重複とノートの有無だけ先に確かめる
+  check:
+    name: 入力を確認
+    runs-on: ubuntu-latest
+    outputs:
+      notes_path: ${{ steps.check.outputs.notes_path }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: check
+        env:
+          VERSION: ${{ inputs.version }}
+          NOTES_PATH: ${{ inputs.notes_path }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          case "$VERSION" in
+            v[0-9]*) ;;
+            *) echo "::error::タグ名は v から始めてください（例: v1.1.0）: $VERSION"; exit 1 ;;
+          esac
+
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" >/dev/null 2>&1; then
+            echo "::error::タグ $VERSION はすでにあります"
+            exit 1
+          fi
+
+          notes="${NOTES_PATH:-docs/release-notes/$VERSION.md}"
+          if [ ! -f "$notes" ]; then
+            echo "::error::リリースノートが見つかりません: $notes"
+            exit 1
+          fi
+
+          echo "notes_path=$notes" >> "$GITHUB_OUTPUT"
+          echo "リリース $VERSION を $GITHUB_SHA に作ります（ノート: $notes）"
+
+  # build.yml と同じ手順。成果物は firmware という名前の artifact に入る
+  build:
+    name: ビルド
+    needs: check
+    uses: zmkfirmware/zmk/.github/workflows/build-user-config.yml@v0.3
+
+  release:
+    name: リリースを作成
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware
+          path: firmware
+
+      - env:
+          VERSION: ${{ inputs.version }}
+          TITLE: ${{ inputs.title }}
+          NOTES: ${{ needs.check.outputs.notes_path }}
+          DRAFT: ${{ inputs.draft }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          mapfile -t uf2 < <(find firmware -type f -name '*.uf2' | sort)
+          if [ "${#uf2[@]}" -eq 0 ]; then
+            echo "::error::uf2 が見つかりません（ビルドの成果物を確認してください）"
+            exit 1
+          fi
+          printf '添付する uf2: %s\n' "${uf2[@]}"
+
+          args=(--target "$GITHUB_SHA" --title "${TITLE:-$VERSION}" --notes-file "$NOTES")
+          if [ "$DRAFT" = "true" ]; then
+            args+=(--draft)
+          fi
+
+          gh release create "$VERSION" "${args[@]}" "${uf2[@]}"

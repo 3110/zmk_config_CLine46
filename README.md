@@ -359,6 +359,27 @@ west build -s zmk/app -d build/left -b xiao_ble//zmk -- \
 
 ペアリングがおかしいときは、両手に `settings_reset` を書き込んでから左右のファームを焼き直します。
 
+## リリース
+
+タグとリリースは **Actions の Release ワークフロー**で作ります。手元で `git tag` を
+打つ必要はありません(タグは対象コミット上に作られます)。
+
+1. `docs/release-notes/<タグ名>.md` にリリースノートを書いて main に push する
+   (例: `docs/release-notes/v1.1.0.md`)
+2. Actions → **Release** → **Run workflow**
+3. 入力する項目
+
+   | 項目 | 内容 |
+   |---|---|
+   | `version` | タグ名。`v` から始める(例: `v1.1.0`) |
+   | `title` | リリースのタイトル。省略するとタグ名だけになる |
+   | `notes_path` | ノートの場所。省略すると `docs/release-notes/<タグ名>.md` |
+   | `draft` | 下書きで作りたいときだけ `true` |
+
+タグの重複とノートの有無は**ビルド前**に確かめるので、入力を間違えても数分待たされません。
+ビルドは `build.yml` と同じ手順で、できた uf2(左右と `settings_reset`)がそのまま
+リリースに添付されます。
+
 ## ファイル構成
 
 | パス | 役割 |
@@ -377,6 +398,8 @@ west build -s zmk/app -d build/left -b xiao_ble//zmk -- \
 | `boards/shields/CLine46/Kconfig.defconfig` | シールド選択時の既定 Kconfig |
 | `.github/workflows/build.yml` | ファームウェアのビルド |
 | `.github/workflows/draw.yml` | キーマップ図の生成(手動実行) |
+| `.github/workflows/release.yml` | タグ作成とリリース公開(手動実行) |
+| `docs/release-notes/` | リリースノート(`v1.1.0.md` のようにタグ名で置く) |
 
 ## カスタマイズのポイント
 
