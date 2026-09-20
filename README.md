@@ -15,6 +15,7 @@
 | 電池 | NiMH 単セル(1.02〜1.36V) |
 | Central | **右手**(トラックボール側) |
 | ZMK Studio | 対応(DYA Studio 拡張込み)。マクロ・コンボ・接続・診断まで編集可([一覧](#dya-studio-でできること)) |
+| DYA Studio | `v2026.09.20.0` で確認([このバージョンで増えたこと](#新バージョンで増えたこと)) |
 | ベース | [cormoran/zmk](https://github.com/cormoran/zmk) `main+dya` @ `e5c9b69`(Zephyr 4.1) |
 
 ## キーマップ
@@ -138,12 +139,48 @@ BLE 接続中は応答を速くするため `CONFIG_ZMK_STUDIO_TRANSPORT_BLE_PRE
 | **Settings** | 左右それぞれのアイドル/スリープのタイムアウト、詳細設定 | `settings-rpc`(左手の分は `custom-settings` の中継) |
 | **Troubleshooting** | 電池残量、FW のビルド情報と稼働時間、キースイッチ診断(チャタリング)、**watchdog の記録(左右とも)**、サポートレポートのコピー | `device-info` / `kscan-diagnostics` / `watchdog` |
 
+### 新バージョンで増えたこと
+
+DYA Studio `v2026.09.20.0`(2026-09-20)の変更のうち、この構成に関係するものです。
+**いずれもブラウザ/アプリ側だけの変更で、ファームを焼き直す必要はありません。**
+プロトコル(`proto/`)は前バージョンから変わっていないので、今のファームのままで全部使えます。
+
+| 増えたこと | 内容 | この構成での扱い |
+|---|---|---|
+| **デスクトップアプリ** | macOS(`.dmg`)と Windows(`.exe`)版が [GitHub のリリース](https://github.com/cormoran/dya-studio/releases)に付くようになった。USB(シリアル)も BLE もアプリ側のダイアログで選べる | ブラウザ版と同じことができる。Chrome / Edge を開かずに済む |
+| **キー編集のフローティングウィンドウ** | ビヘイビア選択がドラッグできる別窓になり、確定すると次のキーへ自動で進む。behavior 検索の改善、クイック選択のカスタマイズも入った | そのまま使える |
+| **WebMCP 対応** | Settings タブを開いている間だけ、対応ブラウザの AI 機能(WebMCP クライアント)から電源管理と詳細設定を操作できる。登録されるのは `get_power_management_settings` / `set_power_management_timeouts` / `reset_all_keyboard_settings` / `list_advanced_keyboard_settings` / `set_advanced_keyboard_setting` の5つ | ファーム側は `settings-rpc` と `custom-settings` があれば足りるので、この構成なら追加設定なしで動く。非対応ブラウザでは何も起きない |
+| **スマートフォン対応の改善** | スクロール範囲の整理、タッチ操作、縦画面の表示修正。Macro&Combo と Trackball はドロップダウンにまとまる | Android Chrome / iOS Bluefy から BLE で繋いだときに効く |
+| **簡体字中国語とブラウザ言語の自動判定** | 英語・日本語・簡体字中国語の切り替え | — |
+| ペリフェラル側 PMW3610 の検出 | 分割キーボードの**子機**に付いたセンサーも一覧・診断できるようになった(両手に `CONFIG_ZMK_PMW3610_SPLIT_RPC_RELAY` が要る) | **この構成には不要**。トラックボールは Central(右手)側に1つだけ。そもそも cormoran 版ドライバ専用の機能(下記) |
+| Demo セッションの復元 | 再読み込みしてもデモ接続とワークスペースが残る | — |
+
+ファーム側で追随したのは `zmk-module-runtime-input-processor` だけです。タグ
+(`zmk-v0.4.0.0`)から `main` に上げて、トラックボール設定の保存先が
+[zmk-feature-custom-settings](https://github.com/cormoran/zmk-feature-custom-settings)
+になりました。Settings タブの詳細設定にも `cormoran_rip` として出てきます。
+ほかのモジュールは 2026-09-20 時点で `main` の先頭と同じ SHA を指しているので、そのままです。
+
+> 保存形式が変わるため、**このファームを焼いた最初の起動でトラックボールの保存済み設定は
+> `CLine46_R.overlay` の既定値に戻ります**(スケーリングや回転を Studio で変えていた場合は
+> 入れ直してください)。
+
+### 採用を検討できるもの(未採用)
+
+DYA Studio が対応していて、このリポジトリではまだ使っていないものです。
+
+| 候補 | 増えること | 必要な作業・注意 |
+|---|---|---|
+| [cormoran 版 PMW3610 ドライバ](https://github.com/cormoran/zmk-driver-pmw3610-with-custom-studio-rpc)への差し替え | Trackball タブに **PMW3610 Drivers** の欄が出て、CPI・スマートアルゴリズム・ダウンシフト/サンプル時間・軸反転を**焼き直さずに**変更して保存できる。Troubleshooting でセンサーの生画像(フレーム)と診断値も見られる | `west.yml` を badjeff 版から差し替え、`CLine46_R.overlay` の `compatible` を `cormoran,pmw3610` に、`CONFIG_PMW3610_ALT_*` を `CONFIG_PMW3610_*` に書き換え、`CONFIG_ZMK_PMW3610_STUDIO_RPC=y` と `CONFIG_ZMK_PMW3610_CUSTOM_SETTINGS=y` を追加する。DT のプロパティ(`irq-gpios` / `cpi` / `evt-type` / `x-input-code` / `y-input-code`)は今と同じ。**トラックボールの実機確認が要る**変更で、RPC 一式は `&studio_unlock` 後しか使えない |
+| [zmk-module-devtool](https://github.com/cormoran/zmk-module-devtool) | 画面右下に **Devtool** の小窓が出て、ファームの Zephyr ログをブラウザで流し読みできる。再起動・ブートローダー移行・ロック操作も窓から叩ける。デバッグプローブ無しで原因を追える | 開発用。イベントタップを有効にすると**打鍵内容を観測できてしまう**ので、常用ファームに入れるならログ取得だけにする。ログのリングバッファでメモリも食う |
+| [zmk-feature-zephyr-setting-expose](https://github.com/cormoran/zmk-feature-zephyr-setting-expose) | 保存済み設定(NVS)を左右それぞれ一覧・編集・削除でき、残容量も見える | DYA Studio 本体にはこの画面が無く、モジュール側の別 Web UI を開く形になる |
+
 ### このファームではできないこと
 
 | できないこと | 理由 |
 |---|---|
 | バッテリー履歴のグラフ | 無効にしています(「既知の事項」参照) |
-| トラックボールのセンサー生画像・CPI 変更 | cormoran 版 PMW3610 ドライバ専用の機能。こちらは badjeff 版を使っています |
+| トラックボールのセンサー生画像・CPI 変更 | cormoran 版 PMW3610 ドライバ専用の機能。こちらは badjeff 版を使っています(差し替える場合は[採用を検討できるもの](#採用を検討できるもの未採用)) |
 | **左手側**のキー配線の表示 | ファームの中継は完成していますが Web UI 側が未実装。打鍵・チャタリングの統計は左右とも取れます |
 | エンコーダーの回転割り当ての変更 | CLine46 にロータリーエンコーダーが載っていないため(`sensor-rotate` は入れていません) |
 
@@ -358,6 +395,10 @@ west build -s zmk/app -d build/left -b xiao_ble//zmk -- \
   FREEZE が記録されていれば watchdog が仕事をした結果、記録が空なのに再起動している
   なら干渉を疑い、`CONFIG_ZMK_WATCHDOG_FREEZE_MONITOR_LOWPRIO_QUEUE=n` で
   タイマー負荷を半分にします
+- **`zmk-module-runtime-input-processor` を `main` に上げた回だけ、トラックボールの
+  保存済み設定が初期化されます。** 保存先が custom-settings に移り、フラッシュ上の
+  形式が変わったためです(モジュールの設計上、旧形式からの移行は行いません)。
+  詳しくは[新バージョンで増えたこと](#新バージョンで増えたこと)を参照
 - **`zmk-feature-default-layer` だけ `codex/custom-rpc-rewrite` ブランチを指しています。**
   `main` にはビヘイビア(`&df`)しか無く Studio RPC が入っていないため、Connection タブ
   から設定できません。`zmk-feature-os-detection` は機能を使う/使わないに関わらず、

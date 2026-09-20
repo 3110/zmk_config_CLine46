@@ -39,9 +39,14 @@ manifest:
       remote: cormoran
       # main @ 2026-07-06 (このモジュールには zmk-v0.4.0.0 タグが未発行)
       revision: 78f86df9e6c5edaf57bef3ccbd7f360cfdf49291
+    # 設定の保存先が custom-settings に移り、Trackball の設定が
+    # DYA Studio の詳細設定（汎用 custom-settings）側にも出るようになった。
+    # zmk-v0.4.0.0 タグはその手前で止まっているため main を指す
     - name: zmk-module-runtime-input-processor
       remote: cormoran
-      revision: zmk-v0.4.0.0
+      # main @ 2026-07-20（タグより先。保存形式が変わるので初回起動時に
+      # 保存済みのトラックボール設定は devicetree の既定値へ戻る）
+      revision: 43618985f8c9d5457cc333b7ca0733f2d361911e
 
     # マクロ/コンボを DYA Studio から編集するためのモジュール。
     # zmk-feature-custom-settings は他 2 つの依存
@@ -83,7 +88,8 @@ manifest:
     # default-layer の zephyr/module.yml が build.depends で os-detection を
     # 要求するため、機能を使わなくてもモジュールを置いておく必要がある
     # （無いと「Unmet or cyclic dependencies in modules」で configure が
-    # 止まる）。CONFIG_ZMK_OS_DETECTION は無効なのでコードは入らない
+    # 止まる）。このキーボードでは OS 判別自体も使うので有効にしている
+    # （CLine46_R.conf の CONFIG_ZMK_OS_DETECTION=y）
     - name: zmk-feature-os-detection
       remote: cormoran
       # main @ 2026-07-19
