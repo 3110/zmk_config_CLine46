@@ -11,7 +11,7 @@
 | キー数 | 46(左右23キーずつ) |
 | コントローラ | Seeed XIAO BLE (nRF52840) ×2 |
 | キースキャン | Charlieplex 方式(D2〜D7、割り込み D1) |
-| ポインティング | PMW3610 トラックボール(右手側、SPI0 / CS=P0.09 / IRQ=D8) |
+| ポインティング | PMW3610 トラックボール(右手側、SPI0 / CS=P0.09 / IRQ=D8)。ドライバは [cormoran 版](https://github.com/cormoran/zmk-driver-pmw3610-with-custom-studio-rpc)(Studio RPC 付き) |
 | 電池 | NiMH 単セル(1.02〜1.36V) |
 | Central | **右手**(トラックボール側) |
 | ZMK Studio | 対応(DYA Studio 拡張込み)。マクロ・コンボ・接続・診断まで編集可([一覧](#dya-studio-でできること)) |
@@ -134,10 +134,10 @@ BLE 接続中は応答を速くするため `CONFIG_ZMK_STUDIO_TRANSPORT_BLE_PRE
 |---|---|---|
 | **Keymap** | キー割り当て、レイヤーの追加・並べ替え・リネーム。**Stream** スイッチを入れると押したキーがプレビュー上で光る。プレビューにはトラックボールも描かれる | ZMK Studio 標準 + `input-stream` / `fast-keymap` / `physical-layout` |
 | **Macro&Combo** | マクロの作成・編集・リネーム・削除、コンボの位置/ビヘイビア/タイムアウト/対象レイヤーの編集 | `runtime-macro` / `runtime-combo` / `custom-settings` |
-| **Trackball** | 感度(0.1〜10倍)、回転、軸スナップ、スクロール、オートマウスレイヤー。入力プロセッサ単位・レイヤー単位で指定 | `runtime-input-processor` |
+| **Trackball** | 感度(0.1〜10倍)、回転、軸スナップ、スクロール、オートマウスレイヤー。入力プロセッサ単位・レイヤー単位で指定。**PMW3610 Drivers** の欄では CPI・スマートアルゴリズム・ダウンシフト/サンプル時間・軸反転をセンサーに直接指定できる | `runtime-input-processor` / PMW3610 ドライバ(`custom-settings` 経由) |
 | **Connection** | BLE プロファイルの改名・切替・ペアリング解除、USB と BLE の出力優先度、**OS 判別の確認と手動上書き**、**接続先ごと・OS ごとの既定レイヤー** | `ble-management` / `os-detection` / `default-layer` |
 | **Settings** | 左右それぞれのアイドル/スリープのタイムアウト、詳細設定 | `settings-rpc`(左手の分は `custom-settings` の中継) |
-| **Troubleshooting** | 電池残量、FW のビルド情報と稼働時間、キースイッチ診断(チャタリング)、**watchdog の記録(左右とも)**、サポートレポートのコピー | `device-info` / `kscan-diagnostics` / `watchdog` |
+| **Troubleshooting** | 電池残量、FW のビルド情報と稼働時間、キースイッチ診断(チャタリング)、**watchdog の記録(左右とも)**、**トラックボールのセンサー生画像(22×22)と診断値**、サポートレポートのコピー | `device-info` / `kscan-diagnostics` / `watchdog` / PMW3610 ドライバ |
 
 ### 新バージョンで増えたこと
 
@@ -152,11 +152,12 @@ DYA Studio `v2026.09.20.0`(2026-09-20)の変更のうち、この構成に関係
 | **WebMCP 対応** | Settings タブを開いている間だけ、対応ブラウザの AI 機能(WebMCP クライアント)から電源管理と詳細設定を操作できる。登録されるのは `get_power_management_settings` / `set_power_management_timeouts` / `reset_all_keyboard_settings` / `list_advanced_keyboard_settings` / `set_advanced_keyboard_setting` の5つ | ファーム側は `settings-rpc` と `custom-settings` があれば足りるので、この構成なら追加設定なしで動く。非対応ブラウザでは何も起きない |
 | **スマートフォン対応の改善** | スクロール範囲の整理、タッチ操作、縦画面の表示修正。Macro&Combo と Trackball はドロップダウンにまとまる | Android Chrome / iOS Bluefy から BLE で繋いだときに効く |
 | **簡体字中国語とブラウザ言語の自動判定** | 英語・日本語・簡体字中国語の切り替え | — |
-| ペリフェラル側 PMW3610 の検出 | 分割キーボードの**子機**に付いたセンサーも一覧・診断できるようになった(両手に `CONFIG_ZMK_PMW3610_SPLIT_RPC_RELAY` が要る) | **この構成には不要**。トラックボールは Central(右手)側に1つだけ。そもそも cormoran 版ドライバ専用の機能(下記) |
+| ペリフェラル側 PMW3610 の検出 | 分割キーボードの**子機**に付いたセンサーも一覧・診断できるようになった(両手に `CONFIG_ZMK_PMW3610_SPLIT_RPC_RELAY` が要る) | **この構成には不要**。トラックボールは Central(右手)側に1つだけなので、中継せずそのまま見える |
 | Demo セッションの復元 | 再読み込みしてもデモ接続とワークスペースが残る | — |
 
-ファーム側で追随したのは `zmk-module-runtime-input-processor` だけです。タグ
-(`zmk-v0.4.0.0`)から `main` に上げて、トラックボール設定の保存先が
+ファーム側では PMW3610 ドライバを cormoran 版へ差し替え(下記)、
+`zmk-module-runtime-input-processor` をタグ
+`zmk-v0.4.0.0` から `main` に上げました。後者で入力プロセッサ設定の保存先が
 [zmk-feature-custom-settings](https://github.com/cormoran/zmk-feature-custom-settings)
 になりました。Settings タブの詳細設定にも `cormoran_rip` として出てきます。
 ほかのモジュールは 2026-09-20 時点で `main` の先頭と同じ SHA を指しているので、そのままです。
@@ -165,13 +166,35 @@ DYA Studio `v2026.09.20.0`(2026-09-20)の変更のうち、この構成に関係
 > `CLine46_R.overlay` の既定値に戻ります**(スケーリングや回転を Studio で変えていた場合は
 > 入れ直してください)。
 
+### トラックボールのセンサー設定(PMW3610 ドライバ)
+
+PMW3610 のドライバは badjeff 版から
+[cormoran 版](https://github.com/cormoran/zmk-driver-pmw3610-with-custom-studio-rpc)に
+差し替えてあります。センサー自体の設定を**焼き直さずに**変えられるのが目的です。
+
+| 変えられるもの | 場所 |
+|---|---|
+| CPI(200〜3200、200 刻み)、X/Y 反転、XY 入れ替え、スマートアルゴリズム、常時稼働、ダウンシフト/サンプル時間、最小レポート間隔 | Trackball タブの **PMW3610 Drivers** |
+| センサーの生画像(22×22)、製品 ID・リビジョン・SQUAL などの診断値 | Troubleshooting タブ |
+
+- `CLine46_R.conf` の `CONFIG_PMW3610_*` は**工場出荷値**で、DYA Studio で保存した値が
+  起動時にその上へ乗ります。戻すときは Studio 側の Reset を使います
+- このサブシステムは**ロック対象**です。読むだけの操作でも `&studio_unlock`(SCROLL + 位置42)が
+  要ります(生レジスタへの書き込みができるため、モジュール側がそう決めています)
+- 保存キーは `CLine46_R.overlay` の `settings-id = "ball"` から `"<項目>@ball"` になります
+- 感度(スケーリング)や回転、スクロール化は**今までどおり入力プロセッサ側**(`runtime-input-processor`)の
+  担当です。センサーの CPI とは別物なので、混ぜないようにしてください
+
+> 生画像の取得は `&spi0` に `cs-gpios` がある(CS を保持したまま連続読みできる)ことを前提にした
+> 速い経路を使います。動きが取りこぼされるようなら、`trackball` ノードに `disable-burst-read;` を
+> 足して遅い方の経路に切り替えます。
+
 ### 採用を検討できるもの(未採用)
 
 DYA Studio が対応していて、このリポジトリではまだ使っていないものです。
 
 | 候補 | 増えること | 必要な作業・注意 |
 |---|---|---|
-| [cormoran 版 PMW3610 ドライバ](https://github.com/cormoran/zmk-driver-pmw3610-with-custom-studio-rpc)への差し替え | Trackball タブに **PMW3610 Drivers** の欄が出て、CPI・スマートアルゴリズム・ダウンシフト/サンプル時間・軸反転を**焼き直さずに**変更して保存できる。Troubleshooting でセンサーの生画像(フレーム)と診断値も見られる | `west.yml` を badjeff 版から差し替え、`CLine46_R.overlay` の `compatible` を `cormoran,pmw3610` に、`CONFIG_PMW3610_ALT_*` を `CONFIG_PMW3610_*` に書き換え、`CONFIG_ZMK_PMW3610_STUDIO_RPC=y` と `CONFIG_ZMK_PMW3610_CUSTOM_SETTINGS=y` を追加する。DT のプロパティ(`irq-gpios` / `cpi` / `evt-type` / `x-input-code` / `y-input-code`)は今と同じ。**トラックボールの実機確認が要る**変更で、RPC 一式は `&studio_unlock` 後しか使えない |
 | [zmk-module-devtool](https://github.com/cormoran/zmk-module-devtool) | 画面右下に **Devtool** の小窓が出て、ファームの Zephyr ログをブラウザで流し読みできる。再起動・ブートローダー移行・ロック操作も窓から叩ける。デバッグプローブ無しで原因を追える | 開発用。イベントタップを有効にすると**打鍵内容を観測できてしまう**ので、常用ファームに入れるならログ取得だけにする。ログのリングバッファでメモリも食う |
 | [zmk-feature-zephyr-setting-expose](https://github.com/cormoran/zmk-feature-zephyr-setting-expose) | 保存済み設定(NVS)を左右それぞれ一覧・編集・削除でき、残容量も見える | DYA Studio 本体にはこの画面が無く、モジュール側の別 Web UI を開く形になる |
 
@@ -180,7 +203,6 @@ DYA Studio が対応していて、このリポジトリではまだ使ってい
 | できないこと | 理由 |
 |---|---|
 | バッテリー履歴のグラフ | 無効にしています(「既知の事項」参照) |
-| トラックボールのセンサー生画像・CPI 変更 | cormoran 版 PMW3610 ドライバ専用の機能。こちらは badjeff 版を使っています(差し替える場合は[採用を検討できるもの](#採用を検討できるもの未採用)) |
 | **左手側**のキー配線の表示 | ファームの中継は完成していますが Web UI 側が未実装。打鍵・チャタリングの統計は左右とも取れます |
 | エンコーダーの回転割り当ての変更 | CLine46 にロータリーエンコーダーが載っていないため(`sensor-rotate` は入れていません) |
 
@@ -253,13 +275,14 @@ fork 元の [takamaru-fpv/zmk_config_CLine46](https://github.com/takamaru-fpv/zm
 | **左手にも custom-settings と split relay を残す** | 上流は左手から削除している。削ると Settings タブから左手のアイドル/スリープ設定を触れなくなる |
 | **watchdog を左手にも入れる** | 左手自身のフリーズ・クラッシュの記録が残る。中継で右手経由から読める |
 | トラックボールの physical-layout ノードを定義 | 上流はモジュールを入れているがノードが無く、プレビューに何も描かれない |
+| **PMW3610 ドライバを cormoran 版に差し替え** | 上流は badjeff 版。cormoran 版は Studio RPC 付きで、CPI などを DYA Studio から変更・保存でき、センサーの生画像も取れる |
 | `default-layer` は `codex/custom-rpc-rewrite`、`os-detection` も追加 | 上流が指す `main` にはビヘイビア(`&df`)しか無く、Connection タブから設定できない |
 | バッテリー履歴を無効 | 見る手段が無いため(「既知の事項」参照) |
 | kscan diagnostics の左手中継を無効 | Web UI 未実装のため。統計は左右とも取れる |
 | `sensor-rotate` を入れない | ロータリーエンコーダー用のモジュールで、CLine46 には載っていない |
 | `CONFIG_ZMK_STUDIO_TRANSPORT_BLE_PREF_LATENCY=0` | BLE 経由の Studio 操作を軽くする |
 | `BT_PERIPHERAL_PREF_MIN_INT` は `12` のまま | 上流は `6`(7.5ms)に下げている。低遅延だが電池を食うため追随していない |
-| PMW3610 の `RUN_DOWNSHIFT_TIME_MS` / `REST1_SAMPLE_TIME_MS` を残す | 上流は既定値に戻した。こちらは現状の挙動で問題が無いため維持 |
+| PMW3610 の `RUN_DOWNSHIFT_TIME_MS` / `REST1_SAMPLE_TIME_MS` を残す | 上流は既定値に戻した。こちらは現状の挙動で問題が無いため維持(ドライバ差し替えに伴い `CONFIG_PMW3610_ALT_*` から `CONFIG_PMW3610_*` に改名) |
 | `zephyr/module.yml` の名前、`CLine46.zmk.yml` の URL と features、`draw.yml` のパスを修正 | 上流は `CLine45` や `roBa` の残骸が残っている |
 
 ## ビルド
@@ -361,7 +384,8 @@ west build -s zmk/app -d build/left -b xiao_ble//zmk -- \
 
 | 項目 | 説明 |
 |---|---|
-| `cpi = <600>` | トラックボールの感度 |
+| `cpi = <600>` | センサーの解像度。ここは**起動時の既定値**で、常用の変更は DYA Studio の PMW3610 Drivers から |
+| `settings-id = "ball"` | DYA Studio 上でのセンサー名。保存キー(`<項目>@ball`)にも使われる |
 | `zip_scroll_scaler 1 8` | スクロール量(現在1/8倍) |
 | `zip_xy_transform INPUT_TRANSFORM_X_INVERT` | 軸の反転・入れ替え。他のパターンはコメントアウトで用意済み |
 | `zip_temp_layer 2 1000` | **オートマウスレイヤー**。コメントを外すと、トラックボールを動かした瞬間に MOUSE レイヤーへ自動遷移 |
@@ -410,5 +434,7 @@ west build -s zmk/app -d build/left -b xiao_ble//zmk -- \
   にパッチを当てた fork が必要でした
 - Actions で `Node.js 20 is deprecated` の警告が出ますが、ZMK 側の再利用可能ワークフロー(`build-user-config.yml@v0.3`)が `actions/checkout@v4` を使っているためで、**ビルドには影響しません**(このワークフローは ZMK 本体のバージョンとは無関係で、4.1 でもそのまま使えます)
 - `&xiao_serial` は無効化しています(D6/D7 を kscan が使用中のため)。有効に戻すとキー入力が壊れます
-- `spi0` の MOSI と MISO が同じ P1.15 に割り当てられていますが、PMW3610 の3線式 SPI 仕様のため正常です
+- `spi0` の MOSI と MISO が同じ P1.15 に割り当てられていますが、PMW3610 の3線式 SPI 仕様のため正常です。
+  PMW3610 ドライバの README が言う「3-wire フォールバック」は CS(`cs-gpios`)が無い配線のことで、
+  この配線には CS があるので速い方(burst)の経路がそのまま使えます
 

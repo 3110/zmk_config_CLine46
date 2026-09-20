@@ -69,13 +69,23 @@
 
     trackball: trackball@0 {
         status = "okay";
-        // main 系のドライバでは compatible が -alt 付きに変わっている
-        compatible = "pixart,pmw3610-alt";
+        // cormoran 版ドライバ（Studio RPC 付き）の compatible。
+        // badjeff 版の "pixart,pmw3610-alt" ではない
+        compatible = "cormoran,pmw3610";
         reg = <0>;
         spi-max-frequency = <2000000>;
         irq-gpios = <&xiao_d 8 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
         cpi = <600>;
-        //swap-xy;
+        // DYA Studio 上でこのセンサーを識別する名前。保存される設定の
+        // キーも "<項目>@ball" になる。省略すると DT のパスから作った
+        // 4桁の16進数になり、画面上で何のセンサーか分からなくなる
+        settings-id = "ball";
+        // burst read（既定）のまま。&spi0 に cs-gpios があり、CS を
+        // 保持したまま読めるので、フレーム取得も速い方の経路が使える。
+        // 取りこぼすようなら disable-burst-read; を足して切り替える
+        // 軸の反転・入れ替えはこのドライバでは DT ではなく
+        // CONFIG_PMW3610_SWAP_XY / _INVERT_X / _INVERT_Y、または
+        // DYA Studio の Trackball タブから指定する
         evt-type = <INPUT_EV_REL>;
         x-input-code = <INPUT_REL_X>;
         y-input-code = <INPUT_REL_Y>;

@@ -18,8 +18,8 @@ config ZMK_POINTING
 config SPI
     default y
 
-# badjeff のドライバは main 系で PMW3610_ALT に改名された
-config PMW3610_ALT
+# cormoran 版ドライバ（Studio RPC 付き）。badjeff 版の PMW3610_ALT ではない
+config PMW3610
     default y
 
 endif

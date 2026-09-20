@@ -2,8 +2,6 @@ manifest:
   remotes:
     - name: cormoran
       url-base: https://github.com/cormoran
-    - name: badjeff    # <-- PMW3610
-      url-base: https://github.com/badjeff
     - name: caksoylar  # <-- RGB LED
       url-base: https://github.com/caksoylar
     - name: takamaru-fpv  # <-- Battery level smoothing
@@ -109,10 +107,18 @@ manifest:
       remote: cormoran
       revision: 4f18de45dc27820725d267916b4cdacc0e0b6cf9
 
+    # PMW3610 ドライバ。badjeff 版から cormoran 版に差し替えた。
+    # Studio RPC 付きで、CPI やダウンシフト時間を DYA Studio から
+    # 変更・保存でき、センサーの生画像（フレーム）も取れる。
+    # devicetree の compatible は cormoran,pmw3610（CLine46_R.overlay）、
+    # Kconfig は CONFIG_PMW3610_*（badjeff 版の _ALT 付きではない）。
+    # 保存には zmk-feature-custom-settings を使う（上で取得済み）
+    - name: zmk-driver-pmw3610-with-custom-studio-rpc
+      remote: cormoran
+      # main @ 2026-07-23
+      revision: 5c34ea0eec246a1c986111417cd779b53144629a
+
     # その他のモジュール
-    - name: zmk-pmw3610-driver
-      remote: badjeff
-      revision: main
     - name: zmk-rgbled-widget
       remote: caksoylar
       revision: main
