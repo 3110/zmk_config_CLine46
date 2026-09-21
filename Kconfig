@@ -41,6 +41,15 @@ config CLINE46_STATUS_ADV_START_DELAY_S
 
 endif # CLINE46_STATUS_ADV
 
+config CLINE46_STATUS_PERIPHERAL_VOLTAGE
+    bool "CLine46: 左手の電池電圧を split 経由で中継する"
+    depends on ZMK_SPLIT && ZMK_SPLIT_RELAY_EVENT
+    help
+      ZMK の split が運ぶ電池情報は残量(%)だけで電圧が入っていないため、
+      cormoran fork の汎用イベント中継に相乗りして左手の電圧を右手へ送る。
+      **左右の両方で有効にすること**（左手＝送る側、右手＝受けて広告に載せる側）。
+      既存の split 接続に相乗りするので、電波も電池消費も増えない。
+
 # 拡張広告のセットは ZMK 本体の広告（セット0）とこちら（セット1）で 2 つ要る
 configdefault BT_EXT_ADV_MAX_ADV_SET
     default 2 if CLINE46_STATUS_ADV

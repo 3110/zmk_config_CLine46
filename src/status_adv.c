@@ -17,9 +17,7 @@
  */
 
 #include <zephyr/bluetooth/bluetooth.h>
-#include <zephyr/device.h>
 #include <zephyr/drivers/hwinfo.h>
-#include <zephyr/drivers/sensor.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -63,6 +61,11 @@
 #include <cormoran/zmk/watchdog.h>
 #endif
 
+#if IS_ENABLED(CONFIG_CLINE46_STATUS_PERIPHERAL_VOLTAGE)
+#include <cline46/peripheral_voltage.h>
+#endif
+
+#include <cline46/battery_mv.h>
 #include <cline46/status_adv.h>
 
 LOG_MODULE_REGISTER(cline46_status_adv, CONFIG_ZMK_LOG_LEVEL);
@@ -89,39 +92,6 @@ static uint8_t keyboard_id;
 static const struct bt_data adv_data[] = {
     BT_DATA(BT_DATA_MANUFACTURER_DATA, (const uint8_t *)&payload, sizeof(payload)),
 };
-
-#if DT_HAS_CHOSEN(zmk_battery)
-static const struct device *const battery_dev = DEVICE_DT_GET(DT_CHOSEN(zmk_battery));
-#endif
-
-/*
- * 電池電圧。ZMK の battery.c が CONFIG_ZMK_BATTERY_REPORT_INTERVAL_S ごとに
- * sensor_sample_fetch() を済ませているので、こちらは読むだけにして余計な
- * ADC 測定はしない（測定しないぶん電池も食わない）。まだ 1 度も測定されて
- * いない起動直後は 0 が返る。
- */
-static uint16_t read_battery_mv(void) {
-#if DT_HAS_CHOSEN(zmk_battery)
-    struct sensor_value value;
-
-    if (!device_is_ready(battery_dev)) {
-        return CLINE46_STATUS_MV_UNKNOWN;
-    }
-
-    if (sensor_channel_get(battery_dev, SENSOR_CHAN_GAUGE_VOLTAGE, &value) < 0) {
-        return CLINE46_STATUS_MV_UNKNOWN;
-    }
-
-    int32_t mv = value.val1 * 1000 + value.val2 / 1000;
-    if (mv <= 0 || mv > UINT16_MAX) {
-        return CLINE46_STATUS_MV_UNKNOWN;
-    }
-
-    return (uint16_t)mv;
-#else
-    return CLINE46_STATUS_MV_UNKNOWN;
-#endif
-}
 
 static uint8_t map_reset_reason(uint32_t cause) {
     /* 複数ビットが同時に立つことがあるので、原因として知りたい順に見る */
@@ -230,8 +200,13 @@ static void build_payload(void) {
 
     fill_layer();
 
-    payload.central_mv = read_battery_mv();
+    payload.central_mv = cline46_battery_mv();
     payload.central_pct = zmk_battery_state_of_charge();
+#if IS_ENABLED(CONFIG_CLINE46_STATUS_PERIPHERAL_VOLTAGE)
+    payload.peripheral_mv = cline46_peripheral_voltage_mv();
+#else
+    payload.peripheral_mv = CLINE46_STATUS_MV_UNKNOWN;
+#endif
     payload.peripheral_pct = peripheral_pct;
 
     payload.os_default_layer = (current_os() << 4) | current_default_layer();
@@ -403,6 +378,10 @@ ZMK_SUBSCRIPTION(cline46_status_adv, zmk_studio_core_lock_state_changed);
 
 #if IS_ENABLED(CONFIG_ZMK_OS_DETECTION)
 ZMK_SUBSCRIPTION(cline46_status_adv, zmk_os_changed);
+#endif
+
+#if IS_ENABLED(CONFIG_CLINE46_STATUS_PERIPHERAL_VOLTAGE)
+ZMK_SUBSCRIPTION(cline46_status_adv, cline46_peripheral_voltage_changed);
 #endif
 
 static int cline46_status_adv_init(void) {

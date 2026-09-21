@@ -24,7 +24,7 @@
 #define CLINE46_STATUS_ADV_MAGIC_1 'L'
 
 /* ペイロードの形式。フィールドを増やしたら上げる */
-#define CLINE46_STATUS_ADV_VERSION 1
+#define CLINE46_STATUS_ADV_VERSION 2
 
 /* 値が取れなかったときに入る値 */
 #define CLINE46_STATUS_PCT_UNKNOWN 0xFF
@@ -69,7 +69,7 @@ enum cline46_status_reset_reason {
 };
 
 /*
- * 広告の manufacturer specific data に載せる中身（22バイト）。
+ * 広告の manufacturer specific data に載せる中身（24バイト）。
  * 数値はすべてリトルエンディアン。詰め物が入らないようにフィールドを並べてある。
  */
 struct cline46_status_adv_payload {
@@ -82,8 +82,11 @@ struct cline46_status_adv_payload {
                                                      * 4文字ちょうどのときは終端無し */
     uint16_t central_mv;   /* 右手の電池電圧 mV（0 = 不明） */
     uint8_t central_pct;   /* 右手の電池残量 %（0xFF = 不明） */
-    uint8_t peripheral_pct;/* 左手の電池残量 %（0xFF = 不明）。
-                            * 左手の電圧は Central に中継されないので % のみ */
+    uint16_t peripheral_mv;/* 左手の電池電圧 mV（0 = 不明・未接続）。
+                            * ZMK の split は残量しか運ばないので、
+                            * 独自のイベント中継で送っている
+                            * （include/cline46/peripheral_voltage.h） */
+    uint8_t peripheral_pct;/* 左手の電池残量 %（0xFF = 不明） */
     uint8_t os_default_layer; /* [7:4] = enum cline46_status_os
                                * [3:0] = 既定レイヤー（0x0F = 未設定） */
     uint8_t profile;       /* [7] 接続済み [6] 未ペアリング [2:0] プロファイル番号 */
