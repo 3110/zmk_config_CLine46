@@ -63,10 +63,14 @@ jobs:
 
           # タグが先にある場合は、それを使う（gh release create は既存タグを
           # そのまま使い、無ければ --target のコミット上に作る）。ただし別の
-          # コミットを指していると、添付する uf2 と中身が食い違うので止める
-          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --jq '.object.sha' 2>/dev/null || true)"
+          # コミットを指していると、添付する uf2 と中身が食い違うので止める。
+          # gh api は 404 のときもエラー本文に --jq を掛けるので、そのままだと
+          # .object.sha が null という文字列で返る。API は 1 回だけ叩いて、
+          # jq 側で空文字に潰す
+          tag_ref="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" 2>/dev/null || true)"
+          tag_sha="$(printf '%s' "$tag_ref" | jq -r '.object.sha // empty' 2>/dev/null || true)"
+          tag_type="$(printf '%s' "$tag_ref" | jq -r '.object.type // empty' 2>/dev/null || true)"
           if [ -n "$tag_sha" ]; then
-            tag_type="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --jq '.object.type')"
             if [ "$tag_type" = "tag" ]; then
               # 注釈付きタグはタグオブジェクトを指すので、コミットまで辿る
               tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha" --jq '.object.sha')"
