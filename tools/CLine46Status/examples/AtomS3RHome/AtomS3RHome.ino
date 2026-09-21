@@ -6,8 +6,8 @@
  *   ┌──────────────────┐
  *   │ BT0        macOS │ ヘッダ（出力先と OS）
  *   │      SYMB        │ レイヤー名（特大・色分け）
- *   │ R ███████░ 1.28V │ 右手
- *   │ L █████░░░ 1.23V │ 左手
+ *   │ L▮▮▮▯62%  R▮▮▮▮75%│ 左右の電池（アイコンと残量）
+ *   │   1.23V     1.28V│ 電圧（NiMH はこちらが判断しやすい）
  *   │ 3d 04h         · │ 稼働時間と受信インジケータ
  *   └──────────────────┘
  *
@@ -29,13 +29,17 @@ static const int16_t SCREEN_H = 128;
 
 /* レイアウト（y 座標） */
 static const int16_t HEADER_Y = 2;
-static const int16_t LAYER_CY = 38;   /* レイヤー名の中心 */
-static const int16_t ROW_R_Y = 64;    /* 右手の行 */
-static const int16_t ROW_L_Y = 88;    /* 左手の行 */
-static const int16_t FOOTER_Y = 114;
-static const int16_t BAR_X = 16;
-static const int16_t BAR_W = 66;
-static const int16_t BAR_H = 10;
+static const int16_t LAYER_CY = 44;  /* レイヤー名の中心 */
+static const int16_t BATT_Y = 70;    /* 電池アイコンと残量(%) */
+static const int16_t VOLT_Y = 90;    /* 電圧 */
+static const int16_t FOOTER_Y = 110;
+
+/* 電池は左右で1行。画面を左右に二分して、それぞれに
+ * ラベル・アイコン・残量(%)を置く */
+static const int16_t BLOCK_W = 64;
+static const int16_t ICON_X = 10;  /* ブロック先頭からの位置 */
+static const int16_t ICON_W = 20;
+static const int16_t ICON_H = 13;
 
 /* 明るさの段階。長押しで 0（消灯）にもできる */
 static const uint8_t BRIGHTNESS[] = {180, 80, 30};
@@ -72,40 +76,55 @@ static uint16_t batteryColor(uint16_t mv, uint8_t percent) {
   return TFT_GREEN;
 }
 
-static void drawBatteryRow(int16_t y, const char *label, uint16_t mv, uint8_t percent,
-                           bool connected) {
-  canvas.setFont(&fonts::Font2);
-  canvas.setTextDatum(top_left);
-  canvas.setTextColor(TFT_LIGHTGREY);
-  canvas.drawString(label, 2, y);
+/* 電池アイコン。枠と端子を描いて、残量ぶんを塗る */
+static void drawBatteryIcon(int16_t x, int16_t y, uint16_t color, uint8_t percent,
+                            bool connected) {
+  canvas.drawRoundRect(x, y, ICON_W, ICON_H, 2, color);
+  canvas.fillRect(x + ICON_W, y + 4, 2, ICON_H - 8, color);
 
   if (!connected) {
-    canvas.setTextColor(TFT_RED);
-    canvas.drawString("-- OFF --", BAR_X, y);
+    /* 切断中は斜線で潰す */
+    canvas.drawLine(x, y + ICON_H - 1, x + ICON_W, y, color);
     return;
   }
 
-  /* バーの枠と中身。中身は残量(%)、数字は電圧 */
-  int16_t bar_y = y + 3;
-  canvas.drawRoundRect(BAR_X, bar_y, BAR_W, BAR_H, 2, TFT_DARKGREY);
   if (CLine46Status::validPercent(percent)) {
-    int16_t fill = (int16_t)((BAR_W - 2) * percent / 100);
-    canvas.fillRect(BAR_X + 1, bar_y + 1, fill, BAR_H - 2, batteryColor(mv, percent));
+    int16_t fill = (int16_t)((ICON_W - 4) * percent / 100);
+    if (fill > 0) {
+      canvas.fillRect(x + 2, y + 2, fill, ICON_H - 4, color);
+    }
   }
+}
+
+/* 左右それぞれの電池。上の行にアイコンと残量(%)、下の行に電圧 */
+static void drawBatteryBlock(int16_t x0, const char *label, uint16_t mv, uint8_t percent,
+                             bool connected) {
+  uint16_t color = connected ? batteryColor(mv, percent) : TFT_DARKGREY;
+  char text[12];
+
+  canvas.setFont(&fonts::Font2);
+  canvas.setTextDatum(top_left);
+  canvas.setTextColor(connected ? TFT_LIGHTGREY : TFT_DARKGREY);
+  canvas.drawString(label, x0 + 1, BATT_Y);
+
+  drawBatteryIcon(x0 + ICON_X, BATT_Y + 2, color, percent, connected);
 
   canvas.setTextDatum(top_right);
-  canvas.setTextColor(batteryColor(mv, percent));
-  char value[12];
-  if (CLine46Status::validMv(mv)) {
-    snprintf(value, sizeof(value), "%u.%02uV", mv / 1000, (mv % 1000) / 10);
-    canvas.drawString(value, SCREEN_W - 2, y);
-  } else if (CLine46Status::validPercent(percent)) {
-    snprintf(value, sizeof(value), "%u%%", percent);
-    canvas.drawString(value, SCREEN_W - 2, y);
+  canvas.setTextColor(color);
+  if (connected && CLine46Status::validPercent(percent)) {
+    snprintf(text, sizeof(text), "%u%%", percent);
   } else {
-    canvas.setTextColor(TFT_DARKGREY);
-    canvas.drawString("--", SCREEN_W - 2, y);
+    snprintf(text, sizeof(text), "--");
   }
+  canvas.drawString(text, x0 + BLOCK_W - 2, BATT_Y);
+
+  canvas.setTextColor(connected ? color : TFT_DARKGREY);
+  if (connected && CLine46Status::validMv(mv)) {
+    snprintf(text, sizeof(text), "%u.%02uV", mv / 1000, (mv % 1000) / 10);
+  } else {
+    snprintf(text, sizeof(text), "----");
+  }
+  canvas.drawString(text, x0 + BLOCK_W - 2, VOLT_Y);
 }
 
 static void drawHeader() {
@@ -167,9 +186,10 @@ static void drawHome() {
   canvas.setTextColor(layerColor(keyboard.layerIndex()));
   canvas.drawString(keyboard.layerName(), SCREEN_W / 2, LAYER_CY);
 
-  drawBatteryRow(ROW_R_Y, "R", keyboard.centralMv(), keyboard.centralPercent(), true);
-  drawBatteryRow(ROW_L_Y, "L", keyboard.peripheralMv(), keyboard.peripheralPercent(),
-                 keyboard.splitConnected());
+  /* 実物と同じ並びで、左手を左に、右手を右に */
+  drawBatteryBlock(0, "L", keyboard.peripheralMv(), keyboard.peripheralPercent(),
+                   keyboard.splitConnected());
+  drawBatteryBlock(BLOCK_W, "R", keyboard.centralMv(), keyboard.centralPercent(), true);
 
   drawFooter();
 

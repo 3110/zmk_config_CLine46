@@ -50,6 +50,7 @@ pio run -e m5stack-stop-watch -t upload -t monitor # 書き込んでシリアル
 | `m5stick-c` | M5StickC |
 | `m5stick-c-plus2` | M5StickC Plus2 |
 | `m5stack-atoms3` | ATOMS3 |
+| `m5stack-atoms3r` | ATOMS3R |
 
 他の機種を足すときは、共通 ini（`../config/platformio-m5stack.ini`）にある
 セクション名をそのまま `extends` に書きます。
