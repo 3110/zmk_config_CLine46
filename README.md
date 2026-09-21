@@ -22,7 +22,8 @@
 
 ![keymap](keymap-drawer/CLine46.svg)
 
-> 画像は Actions の **Draw Keymap** ワークフローで自動生成されます。
+> 画像は Actions の **Draw Keymap** ワークフローで自動生成されます。実行するブランチに
+> 図をコミットして push するので、`develop` を選んでください([ブランチ運用](#ブランチ運用))。
 
 ### レイヤー
 
@@ -285,13 +286,48 @@ fork 元の [takamaru-fpv/zmk_config_CLine46](https://github.com/takamaru-fpv/zm
 | PMW3610 の `RUN_DOWNSHIFT_TIME_MS` / `REST1_SAMPLE_TIME_MS` を残す | 上流は既定値に戻した。こちらは現状の挙動で問題が無いため維持(ドライバ差し替えに伴い `CONFIG_PMW3610_ALT_*` から `CONFIG_PMW3610_*` に改名) |
 | `zephyr/module.yml` の名前、`CLine46.zmk.yml` の URL と features、`draw.yml` のパスを修正 | 上流は `CLine45` や `roBa` の残骸が残っている |
 
+## ブランチ運用
+
+| ブランチ | 役割 |
+|---|---|
+| `main` | リリース済みの状態だけが乗る。タグはここに打つ。更新は PR 経由のみ(直 push は禁止) |
+| `develop` | 開発の本流。既定ブランチ |
+| `feature/...` | 作業用。`develop` から切って `develop` に PR で戻す |
+
+```
+feature/xxx ──PR──> develop ──PR(merge commit)──> main ──タグ/リリース
+                       ^                            |
+                       └──────── 戻しマージ ─────────┘
+```
+
+作業するとき:
+
+```bash
+git switch develop && git pull
+git switch -c feature/やること
+# 編集してコミット
+git push -u origin feature/やること
+```
+
+あとは GitHub で PR を作ります(ベースは `develop`)。ビルドが通ったら **Rebase and merge** で
+マージして、作業ブランチを消します。ブランチ名は `feature/` `fix/` `docs/` のように、種類が
+分かる程度の緩い規則です。
+
+`main` に PR を出すのは[リリース](#リリース)のときだけです。`main` だけを緊急で直したいときは、
+`main` から `hotfix/...` を切って `main` に PR を出し、リリースと同じようにタグを打ってから
+`develop` に戻しマージします。
+
 ## ビルド
 
 ### GitHub Actions(通常はこちら)
 
-1. `config/CLine46.keymap` などを編集して push
+1. `config/CLine46.keymap` などを編集し、作業ブランチを push して `develop` に PR を出す
 2. **Actions** タブでビルド完了を待つ
 3. Artifacts から `firmware.zip` をダウンロード
+
+ビルドが走るのは、**PR を出したとき**と `main` / `develop` への push のときです。作業ブランチを
+push しただけでは走りません。PR の前に試したいときは Actions → **Build** → **Run workflow** で
+作業ブランチを選んでください。
 
 生成される uf2:
 
@@ -408,10 +444,16 @@ DYA Studio の動作には影響しません。
 タグとリリースは **Actions の Release ワークフロー**で作ります。手元で `git tag` を
 打つ必要はありません(タグは対象コミット上に作られます)。
 
-1. `docs/release-notes/<タグ名>.md` にリリースノートを書いて main に push する
-   (例: `docs/release-notes/v1.1.0.md`)
-2. Actions → **Release** → **Run workflow**
-3. 入力する項目
+1. `docs/release-notes/<タグ名>.md` にリリースノートを書いて、通常の作業と同じように
+   `develop` に入れる(例: `docs/release-notes/v1.1.0.md`)
+2. `develop` → `main` の PR を作り、**Create a merge commit** でマージする
+
+   > squash と rebase は使わないでください。`main` のコミットが `develop` と別物になり、
+   > 手順 5 の戻しマージが毎回コンフリクトします。
+
+3. Actions → **Release** → **Run workflow**。**Use workflow from** で `main` を選ぶ
+   (ほかのブランチを選ぶと、入力の確認の時点で止まります)
+4. 入力する項目
 
    | 項目 | 内容 |
    |---|---|
@@ -421,9 +463,20 @@ DYA Studio の動作には影響しません。
    | `draft` | 下書きで作りたいときだけ `true` |
    | `retag` | すでにあるタグを別のコミットに打ち直すときだけ `true` |
 
+5. リリースを `main` から `develop` に反映する
+
+   ```bash
+   git fetch origin --tags
+   git switch develop
+   git merge origin/main   # 手順 2 のマージコミットを取り込む。通常は fast-forward
+   git push
+   ```
+
 タグの重複とノートの有無は**ビルド前**に確かめるので、入力を間違えても数分待たされません。
 ビルドは `build.yml` と同じ手順で、できた uf2(左右と `settings_reset`)がそのまま
 リリースに添付されます。
+
+`develop` は消さずにそのまま使い続けます。
 
 ## ファイル構成
 
