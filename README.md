@@ -387,9 +387,10 @@ DYA Studio の動作には影響しません。
 > 出すため、**拡張広告のセットをもう1つ**確保して(`CONFIG_BT_EXT_ADV`)、そちらに
 > 流しています。ZMK 側は従来どおりセット0を使うので互いに独立です。
 
-受信側は [tools/m5stack-status-monitor](tools/m5stack-status-monitor) に
-M5Stack 用のスケッチ(シリアル出力)を置いてあります。画面を使わないので、
-**BLE が載っている M5Stack ならどの機種でも**動きます。
+受信側は Arduino ライブラリ [tools/CLine46Status](tools/CLine46Status) にまとめてあり、
+シリアルに出すだけの PlatformIO プロジェクトが
+[tools/m5stack-status-monitor](tools/m5stack-status-monitor) にあります。
+ライブラリに表示は含めていないので、**機種ごとの画面表示は自分で書けます**。
 バイト配置は [docs/status-advertisement.md](docs/status-advertisement.md) にあります。
 `include/cline46/status_adv.h` は Zephyr に依存していないので、受信側へ
 そのままコピーして使えます。
@@ -429,7 +430,8 @@ M5Stack 用のスケッチ(シリアル出力)を置いてあります。画面�
 | `include/cline46/status_adv.h` | 広告に載せるデータの定義。**受信側にもそのまま使える** |
 | `CMakeLists.txt` / `Kconfig` | 上の C を Zephyr モジュールとしてビルドするための定義 |
 | `docs/status-advertisement.md` | 広告のバイト配置と M5Stack 側の実装例 |
-| `tools/m5stack-status-monitor/` | 受信側の M5Stack スケッチ(シリアル出力) |
+| `tools/CLine46Status/` | 受信側の Arduino ライブラリ(表示なし) |
+| `tools/m5stack-status-monitor/` | シリアルに出すだけの PlatformIO プロジェクト |
 | `config/CLine46.json` | keymap-drawer 用の物理レイアウト定義 |
 | `build.yaml` | ビルド対象の board / shield マトリクス |
 | `keymap_drawer.config.yaml` | キーマップ図の描画設定 |

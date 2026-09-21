@@ -83,9 +83,12 @@ payload（`struct cline46_status_adv_payload`、**すべてリトルエンディ
 
 ## 受信側（M5Stack / ESP32）
 
-そのまま書き込める M5Stack 用のスケッチを
-[tools/m5stack-status-monitor](../tools/m5stack-status-monitor) に置いてあります
-（シリアルに出すだけなので、BLE が載っている M5Stack ならどの機種でも動きます）。
+受信用の Arduino ライブラリを [tools/CLine46Status](../tools/CLine46Status) に、
+それを使ってシリアルに出すだけの PlatformIO プロジェクトを
+[tools/m5stack-status-monitor](../tools/m5stack-status-monitor) に置いてあります。
+ライブラリに表示は含めていないので、機種ごとの画面表示は別に書けます。
+
+下は仕組みを示すための最小例です（実際にはライブラリを使うほうが簡単です）。
 
 ### 実装例
 
