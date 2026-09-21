@@ -42,7 +42,8 @@
 #include <zmk/events/layer_state_changed.h>
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
-#include <zmk/events/split_peripheral_status_changed.h>
+#include <zmk/split/central.h>
+#include <zmk/split/transport/central.h>
 #endif
 
 #if IS_ENABLED(CONFIG_ZMK_STUDIO)
@@ -85,7 +86,6 @@ static struct cline46_status_adv_payload payload;
 
 /* イベントでしか取れない値はここに持っておく */
 static uint8_t peripheral_pct = CLINE46_STATUS_PCT_UNKNOWN;
-static bool peripheral_connected;
 static uint8_t reset_reason = CLINE46_STATUS_RESET_UNKNOWN;
 static uint8_t keyboard_id;
 
@@ -119,6 +119,30 @@ static uint8_t map_reset_reason(uint32_t cause) {
     return cause ? CLINE46_STATUS_RESET_OTHER : CLINE46_STATUS_RESET_UNKNOWN;
 }
 
+/*
+ * 左手と繋がっているか。
+ *
+ * ZMK の zmk_split_peripheral_status_changed は Peripheral 側でしか上がらない
+ * （app/src/split/bluetooth/peripheral.c）ので、Central では split transport に
+ * 繋がっている source の数を数えて判断する。get_available_source_ids() は
+ * PERIPHERAL_SLOT_STATE_CONNECTED のものだけを返す。
+ */
+static bool split_peripheral_connected(void) {
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL) && ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT > 0
+    uint8_t sources[ZMK_SPLIT_CENTRAL_PERIPHERAL_COUNT];
+
+    STRUCT_SECTION_FOREACH(zmk_split_transport_central, transport) {
+        if (transport->api == NULL || transport->api->get_available_source_ids == NULL) {
+            continue;
+        }
+        if (transport->api->get_available_source_ids(sources) > 0) {
+            return true;
+        }
+    }
+#endif
+    return false;
+}
+
 static uint8_t incident_count(void) {
 #if IS_ENABLED(CONFIG_ZMK_WATCHDOG)
     uint16_t count = zmk_watchdog_store_count();
@@ -148,7 +172,7 @@ static uint8_t current_default_layer(void) {
 #endif
 }
 
-static uint8_t current_flags(void) {
+static uint8_t current_flags(bool peripheral_connected) {
     uint8_t flags = 0;
 
 #if IS_ENABLED(CONFIG_ZMK_USB)
@@ -202,12 +226,16 @@ static void build_payload(void) {
 
     payload.central_mv = cline46_battery_mv();
     payload.central_pct = zmk_battery_state_of_charge();
+
+    /* 左手が切れているときに古い値を出し続けないよう、まとめて不明にする */
+    bool peripheral_connected = split_peripheral_connected();
 #if IS_ENABLED(CONFIG_CLINE46_STATUS_PERIPHERAL_VOLTAGE)
-    payload.peripheral_mv = cline46_peripheral_voltage_mv();
+    payload.peripheral_mv =
+        peripheral_connected ? cline46_peripheral_voltage_mv() : CLINE46_STATUS_MV_UNKNOWN;
 #else
     payload.peripheral_mv = CLINE46_STATUS_MV_UNKNOWN;
 #endif
-    payload.peripheral_pct = peripheral_pct;
+    payload.peripheral_pct = peripheral_connected ? peripheral_pct : CLINE46_STATUS_PCT_UNKNOWN;
 
     payload.os_default_layer = (current_os() << 4) | current_default_layer();
 
@@ -220,7 +248,7 @@ static void build_payload(void) {
         payload.profile |= CLINE46_STATUS_PROFILE_OPEN;
     }
 
-    payload.flags = current_flags();
+    payload.flags = current_flags(peripheral_connected);
 
     int64_t minutes = k_uptime_get() / 60000;
     payload.uptime_min = minutes > UINT16_MAX ? UINT16_MAX : (uint16_t)minutes;
@@ -344,16 +372,6 @@ static int status_adv_listener(const zmk_event_t *eh) {
         return ZMK_EV_EVENT_BUBBLE;
     }
 
-    const struct zmk_split_peripheral_status_changed *split_status =
-        as_zmk_split_peripheral_status_changed(eh);
-    if (split_status != NULL) {
-        peripheral_connected = split_status->connected;
-        if (!split_status->connected) {
-            peripheral_pct = CLINE46_STATUS_PCT_UNKNOWN;
-        }
-        refresh_soon();
-        return ZMK_EV_EVENT_BUBBLE;
-    }
 #endif
 
     refresh_soon();
@@ -369,7 +387,6 @@ ZMK_SUBSCRIPTION(cline46_status_adv, zmk_activity_state_changed);
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 ZMK_SUBSCRIPTION(cline46_status_adv, zmk_peripheral_battery_state_changed);
-ZMK_SUBSCRIPTION(cline46_status_adv, zmk_split_peripheral_status_changed);
 #endif
 
 #if IS_ENABLED(CONFIG_ZMK_STUDIO)
@@ -403,4 +420,10 @@ static int cline46_status_adv_init(void) {
     return 0;
 }
 
-SYS_INIT(cline46_status_adv_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
+/*
+ * zmk-feature-watchdog が APPLICATION/CONFIG_APPLICATION_INIT_PRIORITY で
+ * hwinfo_clear_reset_cause() を呼ぶ（src/watchdog_reset_cause.c）。同じ優先度だと
+ * どちらが先かはリンク順次第で、後になるとリセット原因が読めない（「不明」になる）。
+ * そのため既定より小さい優先度を使って必ず先に読む
+ */
+SYS_INIT(cline46_status_adv_init, APPLICATION, CONFIG_CLINE46_STATUS_ADV_INIT_PRIORITY);

@@ -31,6 +31,14 @@ config CLINE46_STATUS_ADV_IDLE_INTERVAL_MS
       CONFIG_ZMK_IDLE_TIMEOUT を過ぎてアイドルに入ったあとの間隔。
       ディープスリープに入ると広告そのものを止める。
 
+config CLINE46_STATUS_ADV_INIT_PRIORITY
+    int "初期化の優先度（APPLICATION レベル内）"
+    default 50
+    range 0 99
+    help
+      リセット原因（hwinfo）を zmk-feature-watchdog が消すより前に読むため、
+      既定の APPLICATION 優先度（90）より小さい値にしてある。
+
 config CLINE46_STATUS_ADV_START_DELAY_S
     int "起動してから広告を始めるまでの秒数"
     default 3

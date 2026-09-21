@@ -17,7 +17,6 @@
 #include <zmk/events/battery_state_changed.h>
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
-#include <zmk/events/split_peripheral_status_changed.h>
 #include <zmk/split/central.h>
 #else
 #include <zmk/split/peripheral.h>
@@ -41,23 +40,15 @@ uint16_t cline46_peripheral_voltage_mv(void) { return peripheral_mv; }
 
 ZMK_RELAY_EVENT_HANDLE(cline46_peripheral_voltage_changed, clv, source);
 
+/* 切断したときに古い値を出し続けない仕掛けは status_adv.c 側にある
+ * （左手が切れているかは split transport を見て判断する。ZMK の
+ * zmk_split_peripheral_status_changed は Peripheral 側でしか上がらない） */
 static int central_listener(const zmk_event_t *eh) {
     const struct cline46_peripheral_voltage_changed *voltage =
         as_cline46_peripheral_voltage_changed(eh);
-    if (voltage != NULL) {
-        /* 中継されてきたものだけを採る（自分発のイベントは無い想定だが念のため） */
-        if (voltage->source != ZMK_RELAY_EVENT_SOURCE_SELF) {
-            peripheral_mv = voltage->mv;
-            LOG_DBG("Peripheral %u voltage %u mV", voltage->source, voltage->mv);
-        }
-        return ZMK_EV_EVENT_BUBBLE;
-    }
-
-    const struct zmk_split_peripheral_status_changed *status =
-        as_zmk_split_peripheral_status_changed(eh);
-    if (status != NULL && !status->connected) {
-        /* 切れたら古い値を出し続けない */
-        peripheral_mv = 0;
+    if (voltage != NULL && voltage->source != ZMK_RELAY_EVENT_SOURCE_SELF) {
+        peripheral_mv = voltage->mv;
+        LOG_DBG("Peripheral %u voltage %u mV", voltage->source, voltage->mv);
     }
 
     return ZMK_EV_EVENT_BUBBLE;
@@ -65,7 +56,6 @@ static int central_listener(const zmk_event_t *eh) {
 
 ZMK_LISTENER(cline46_peripheral_voltage, central_listener);
 ZMK_SUBSCRIPTION(cline46_peripheral_voltage, cline46_peripheral_voltage_changed);
-ZMK_SUBSCRIPTION(cline46_peripheral_voltage, zmk_split_peripheral_status_changed);
 
 #else /* Peripheral（左手） */
 
