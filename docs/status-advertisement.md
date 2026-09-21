@@ -19,12 +19,24 @@ ZMK 自身もプロファイル用の広告と、`&studio_unlock` 後の directe
 変わります。**受信側は MAC ではなくマジック（`0xFFFF` + `"CL"`）で絞り込んでください。**
 同じ広告を出すキーボードが複数ある場合は `keyboard_id`（個体ごとに固定）で区別できます。
 
+## 左手の電池電圧
+
+ZMK の split が中継する電池情報は**残量(%)だけ**で、電圧は含まれていません
+（`zmk_peripheral_battery_state_changed` の中身は `source` と `state_of_charge` のみ）。
+そこで cormoran fork の汎用イベント中継（`CONFIG_ZMK_SPLIT_RELAY_EVENT`）に相乗りして、
+左手が測った電圧をそのまま右手へ送っています（`src/peripheral_voltage.c`、中継の識別子は `clv`）。
+
+- **左右の両方**で `CONFIG_CLINE46_STATUS_PERIPHERAL_VOLTAGE=y` が要ります
+- 左手は電池を測ったタイミング（既定60秒ごと）にイベントを上げるだけで、**広告は出しません**。
+  既存の split 接続に相乗りするので、電波も電池消費も増えません
+- 左手が切断されると `peripheral_mv` は `0`（不明）に戻ります
+
 ## パケットの形
 
 AD 構造は Manufacturer Specific Data（type `0xFF`）1つだけです。
 
 ```
-AD length (1) | AD type 0xFF (1) | payload (22)  = 24 バイト（31 バイト以内）
+AD length (1) | AD type 0xFF (1) | payload (24)  = 26 バイト（31 バイト以内）
 ```
 
 payload（`struct cline46_status_adv_payload`、**すべてリトルエンディアン**）:
@@ -33,19 +45,20 @@ payload（`struct cline46_status_adv_payload`、**すべてリトルエンディ
 |---|---|---|---|
 | 0 | 2 | `company_id` | `0xFFFF`（SIG が内部用に予約している ID） |
 | 2 | 2 | `magic` | `'C'`, `'L'` |
-| 4 | 1 | `version` | ペイロード形式。現在 `1` |
+| 4 | 1 | `version` | ペイロード形式。現在 `2`（`1` は `peripheral_mv` が無い） |
 | 5 | 1 | `keyboard_id` | 個体識別（hwinfo のデバイスIDの先頭1バイト） |
 | 6 | 1 | `layer_index` | 最上位のアクティブレイヤー番号（0=BASE） |
 | 7 | 4 | `layer_name` | `display-name` の先頭4文字。4文字ちょうどのときは**終端なし** |
 | 11 | 2 | `central_mv` | 右手の電池電圧 mV（`0` = 不明） |
 | 13 | 1 | `central_pct` | 右手の電池残量 %（`0xFF` = 不明） |
-| 14 | 1 | `peripheral_pct` | 左手の電池残量 %（`0xFF` = 不明・未接続） |
-| 15 | 1 | `os_default_layer` | 上位4bit = OS 判別結果、下位4bit = 既定レイヤー（`0x0F` = 未設定） |
-| 16 | 1 | `profile` | bit7 接続済み / bit6 未ペアリング / bit2-0 プロファイル番号 |
-| 17 | 1 | `flags` | 下表 |
-| 18 | 2 | `uptime_min` | 起動からの経過分（65535 で頭打ち） |
-| 20 | 1 | `reset_reason` | 下表 |
-| 21 | 1 | `incident_count` | watchdog に残っている記録の件数 |
+| 14 | 2 | `peripheral_mv` | 左手の電池電圧 mV（`0` = 不明・未接続） |
+| 16 | 1 | `peripheral_pct` | 左手の電池残量 %（`0xFF` = 不明・未接続） |
+| 17 | 1 | `os_default_layer` | 上位4bit = OS 判別結果、下位4bit = 既定レイヤー（`0x0F` = 未設定） |
+| 18 | 1 | `profile` | bit7 接続済み / bit6 未ペアリング / bit2-0 プロファイル番号 |
+| 19 | 1 | `flags` | 下表 |
+| 20 | 2 | `uptime_min` | 起動からの経過分（65535 で頭打ち） |
+| 22 | 1 | `reset_reason` | 下表 |
+| 23 | 1 | `incident_count` | watchdog に残っている記録の件数 |
 
 ### flags
 
@@ -117,9 +130,10 @@ void loop() {
   char layer[CLINE46_STATUS_LAYER_NAME_LEN + 1] = {0};
   memcpy(layer, g_status.layer_name, CLINE46_STATUS_LAYER_NAME_LEN);
 
-  Serial.printf("%s  R:%umV/%u%%  L:%u%%  OS:%u  prof:%u  up:%umin\n",
+  Serial.printf("%s  R:%umV/%u%%  L:%umV/%u%%  OS:%u  prof:%u  up:%umin\n",
                 layer, g_status.central_mv, g_status.central_pct,
-                g_status.peripheral_pct, g_status.os_default_layer >> 4,
+                g_status.peripheral_mv, g_status.peripheral_pct,
+                g_status.os_default_layer >> 4,
                 g_status.profile & CLINE46_STATUS_PROFILE_INDEX_MASK,
                 g_status.uptime_min);
 }
@@ -130,10 +144,9 @@ void loop() {
 
 ## 制限と注意
 
-- **左手の電池は % のみ**です。電圧(mV)は ZMK の split 中継に含まれておらず
-  （`zmk_peripheral_battery_state_changed` は `state_of_charge` だけ）、Central 側から
-  読む手段がありません。左手の電圧も欲しい場合は `CONFIG_ZMK_SPLIT_RELAY_EVENT` を
-  使った独自の中継を書く必要があります
+- **左手の電圧は独自の中継**で運んでいます（上記）。左手のファームが古い（この機能が
+  入っていない）場合は `peripheral_mv` が `0` のままになります。残量(%)は ZMK 標準の
+  中継なので、そちらは従来どおり取れます
 - **電圧は ZMK が定期取得した値の読み出し**です。`CONFIG_ZMK_BATTERY_REPORT_INTERVAL_S`
   （既定60秒）ごとにしか更新されず、起動直後の 1 回目までは `0`（不明）になります。
   広告のためだけに ADC を回さないのは電池を食わないためです
