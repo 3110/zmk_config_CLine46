@@ -14,6 +14,9 @@
  *   │ 3d 04h         · │ 稼働時間と受信インジケータ
  *   └──────────────────┘
  *
+ * 受信できないときは待ち受け画面になる。青い波紋＝探している、
+ * 橙の電源マーク＝キーボード側で広告を止めてある（&status_adv）。
+ *
  * 操作: 画面を短押し=画面切替 / 長押し=明るさ切替（最後まで行くと消灯）
  *
  * 必要なもの: M5Unified, NimBLE-Arduino, CLine46Status
@@ -90,8 +93,10 @@ static const uint8_t BRIGHTNESS_COUNT = sizeof(BRIGHTNESS) / sizeof(BRIGHTNESS[0
 static uint8_t brightness_index = 0;
 static bool display_off = false;
 
-/* 画面を描き直す間隔。広告が来なくても稼働時間と「受信なし」を更新する */
+/* 画面を描き直す間隔。広告が来なくても稼働時間と待ち受け画面を更新する */
 static const uint32_t REDRAW_INTERVAL_MS = 1000;
+/* 待ち受け画面はアニメーションするので、その間だけ速く描き直す */
+static const uint32_t SPLASH_REDRAW_INTERVAL_MS = 60;
 static uint32_t last_draw_ms = 0;
 static bool blink = false;
 
@@ -406,29 +411,127 @@ static void drawHealth() {
   canvas.pushSprite(0, 0);
 }
 
-static void drawNoSignal() {
+/* --- 待ち受け画面 ---
+ *
+ * 受信できていないときと、キーボード側で広告を止めたときの2種類。
+ * 「圏外で待っている」のか「こちらから止めた」のかが一目で分かるよう、
+ * 色も形も変えてある（青い波紋＝探している / 橙の電源マーク＝止めてある）。
+ */
+
+/* RGB565 を暗くする。level は 0(黒) 〜 255(そのまま) */
+static uint16_t dimColor(uint16_t color, uint8_t level) {
+  uint16_t r = ((color >> 11) & 0x1F) * level / 255;
+  uint16_t g = ((color >> 5) & 0x3F) * level / 255;
+  uint16_t b = (color & 0x1F) * level / 255;
+  return (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+static const int16_t SPLASH_CX = SCREEN_W / 2;
+static const int16_t SPLASH_CY = 54;   /* 図形の中心 */
+static const int16_t SPLASH_LABEL_Y = 102;  /* 大きい文字の中心 */
+static const int16_t SPLASH_SUB_Y = 118;    /* 補足の中心 */
+
+/* 波紋。外へ広がりながら薄くなる */
+static const int16_t RIPPLE_MAX_R = 38;
+static const uint8_t RIPPLE_COUNT = 3;
+static const uint32_t RIPPLE_PERIOD_MS = 1800;
+
+/* 見出し。どちらの画面にも同じ位置で出す */
+static void drawSplashTitle() {
+  canvas.setFont(&fonts::Font2);
+  canvas.setTextDatum(top_left);
+  canvas.setTextColor(TFT_DARKGREY);
+  canvas.drawString("CLine46", 4, 2);
+}
+
+/* 受信待ち。中心から波紋が広がる */
+static void drawSearching() {
   canvas.fillSprite(TFT_BLACK);
+
+  uint32_t phase = millis() % RIPPLE_PERIOD_MS;
+
+  for (uint8_t i = 0; i < RIPPLE_COUNT; i++) {
+    /* 3本を等間隔にずらして、途切れずに広がって見えるようにする */
+    uint32_t offset = (phase + i * (RIPPLE_PERIOD_MS / RIPPLE_COUNT)) % RIPPLE_PERIOD_MS;
+    int16_t r = (int16_t)(offset * RIPPLE_MAX_R / RIPPLE_PERIOD_MS);
+    if (r < 5) {
+      continue;
+    }
+    /* 外へ行くほど薄く */
+    uint8_t level = (uint8_t)(230 - (uint32_t)r * 200 / RIPPLE_MAX_R);
+    canvas.drawCircle(SPLASH_CX, SPLASH_CY, r, dimColor(TFT_CYAN, level));
+    canvas.drawCircle(SPLASH_CX, SPLASH_CY, r - 1, dimColor(TFT_CYAN, level / 3));
+  }
+
+  canvas.fillCircle(SPLASH_CX, SPLASH_CY, 3, TFT_CYAN);
+
+  /* 文字は波紋の上に重ねる。帯を黒で塗ってから描く */
+  canvas.fillRect(0, SPLASH_LABEL_Y - 10, SCREEN_W, SCREEN_H - SPLASH_LABEL_Y + 10, TFT_BLACK);
+  canvas.fillRect(0, 0, SCREEN_W, 18, TFT_BLACK);
+  drawSplashTitle();
 
   canvas.setFont(&fonts::Font2);
   canvas.setTextDatum(middle_center);
-  canvas.setTextColor(TFT_DARKGREY);
-  canvas.drawString("NO SIGNAL", SCREEN_W / 2, SCREEN_H / 2 - 12);
+  canvas.setTextColor(TFT_CYAN);
+  canvas.drawString("SEARCHING", SPLASH_CX, SPLASH_LABEL_Y);
 
+  canvas.setTextColor(TFT_DARKGREY);
   if (keyboard.available()) {
     /* いつから受信できていないか。スリープ中なのか圏外なのかの判断材料 */
     char age[16];
-    snprintf(age, sizeof(age), "%us ago", keyboard.ageMs() / 1000);
-    canvas.drawString(age, SCREEN_W / 2, SCREEN_H / 2 + 12);
+    snprintf(age, sizeof(age), "last %us ago", keyboard.ageMs() / 1000);
+    canvas.drawString(age, SPLASH_CX, SPLASH_SUB_Y);
   } else {
-    canvas.drawString("waiting...", SCREEN_W / 2, SCREEN_H / 2 + 12);
+    canvas.drawString("no keyboard yet", SPLASH_CX, SPLASH_SUB_Y);
   }
 
   canvas.pushSprite(0, 0);
 }
 
+/* 電源マーク。リングの上を欠かして縦棒を通す */
+static void drawPowerGlyph(int16_t cx, int16_t cy, int16_t r, uint16_t color) {
+  for (int16_t i = 0; i < 3; i++) {
+    canvas.drawCircle(cx, cy, r - i, color);
+  }
+  /* リングの上を背景色で消してから縦棒を描く */
+  canvas.fillRect(cx - 4, cy - r - 3, 9, 8, TFT_BLACK);
+  canvas.fillRect(cx - 1, cy - r - 2, 3, r * 3 / 5, color);
+}
+
+/* キーボード側で広告を止めてある。ゆっくり明滅させて「生きているが止めてある」を出す */
+static void drawStandby() {
+  canvas.fillSprite(TFT_BLACK);
+
+  /* 3秒で一往復。完全には消さず 110 まで落とす */
+  uint32_t phase = millis() % 3000;
+  uint32_t up = phase < 1500 ? phase : 3000 - phase; /* 0..1500 の三角波 */
+  uint8_t level = (uint8_t)(110 + up * 145 / 1500);
+  uint16_t color = dimColor(TFT_ORANGE, level);
+
+  drawPowerGlyph(SPLASH_CX, SPLASH_CY, 22, color);
+
+  drawSplashTitle();
+
+  canvas.setFont(&fonts::FreeSansBold18pt7b);
+  canvas.setTextDatum(middle_center);
+  canvas.setTextColor(color);
+  canvas.drawString("OFF", SPLASH_CX, SPLASH_LABEL_Y - 4);
+
+  canvas.setFont(&fonts::Font2);
+  canvas.setTextColor(TFT_DARKGREY);
+  canvas.drawString("key to resume", SPLASH_CX, SPLASH_SUB_Y + 2);
+
+  canvas.pushSprite(0, 0);
+}
+
 static void drawScreen() {
+  /* 止めると伝えてきたなら、沈黙を待たずに専用の画面にする */
+  if (keyboard.broadcastOff()) {
+    drawStandby();
+    return;
+  }
   if (!keyboard.alive()) {
-    drawNoSignal();
+    drawSearching();
     return;
   }
 
@@ -490,7 +593,7 @@ void setup() {
   keyboard.onUpdate(onUpdate);
   keyboard.begin();
 
-  drawNoSignal();
+  drawScreen();
 }
 
 void loop() {
@@ -521,8 +624,9 @@ void loop() {
 
   keyboard.poll(); /* 受信したら onUpdate() から描き直す */
 
-  /* 広告が来ない間も、稼働時間と「受信なし」の表示は進める */
-  if (millis() - last_draw_ms >= REDRAW_INTERVAL_MS) {
+  /* 広告が来ない間も、稼働時間と待ち受けのアニメーションは進める */
+  uint32_t redraw_interval = keyboard.alive() ? REDRAW_INTERVAL_MS : SPLASH_REDRAW_INTERVAL_MS;
+  if (millis() - last_draw_ms >= redraw_interval) {
     last_draw_ms = millis();
     drawScreen();
   }

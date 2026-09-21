@@ -71,8 +71,13 @@ class CLine46Status {
 
     /* 一度でも広告を受信したか */
     bool available() const { return available_; }
-    /* 直近 setTimeout() 以内に受信しているか */
+    /* 直近 setTimeout() 以内に受信していて、かつ止められていないか */
     bool alive() const;
+    /* キーボード側で広告を止められたか（&status_adv でオフにされた）。
+     * 止める直前に流れる「お別れ」パケットで分かるので、沈黙のタイムアウトを
+     * 待たずに判定できる。次のパケットを受けるまで true のまま。
+     * alive() は false になるので、圏外と区別したいときだけ見ればよい */
+    bool broadcastOff() const { return flag(CLINE46_STATUS_FLAG_ADV_STOPPING); }
     /* 最後に受信してからの経過ミリ秒 */
     uint32_t ageMs() const;
     /* 直近の電波強度 */

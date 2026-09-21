@@ -196,6 +196,10 @@ bool CLine46Status::alive() const {
     if (!available_) {
         return false;
     }
+    /* 止めると伝えてきたなら、次が来ないことは分かっている */
+    if (broadcastOff()) {
+        return false;
+    }
     /* 直近の状態がアイドルなら、広告の間隔そのものが長い */
     uint32_t timeout = idle() ? idle_timeout_ms_ : timeout_ms_;
     return ageMs() <= timeout;
@@ -288,5 +292,10 @@ void CLine46Status::printTo(Print &out) const {
     if (incidentCount() > 0) {
         out.printf("  記録%u件", incidentCount());
     }
-    out.printf("  RSSI:%ddBm  ID:%02X\n", rssi_, keyboardId());
+    out.printf("  RSSI:%ddBm  ID:%02X", rssi_, keyboardId());
+
+    if (broadcastOff()) {
+        out.print("  [広告オフ]");
+    }
+    out.print('\n');
 }

@@ -39,6 +39,9 @@
 #define CLINE46_STATUS_FLAG_STUDIO_UNLOCKED (1 << 3) /* ZMK Studio のロック解除中 */
 #define CLINE46_STATUS_FLAG_SPLIT_CONNECTED (1 << 4) /* 左手と繋がっている */
 #define CLINE46_STATUS_FLAG_IDLE (1 << 5)         /* アイドル状態 */
+/* これから広告を止める（キーでオフにされた）。停止の直前に数回だけ流す。
+ * 受信側は沈黙のタイムアウトを待たずに「意図的なオフ」と判断できる */
+#define CLINE46_STATUS_FLAG_ADV_STOPPING (1 << 6)
 
 /* profile のビット */
 #define CLINE46_STATUS_PROFILE_CONNECTED (1 << 7) /* 選択中プロファイルが接続済み */

@@ -83,6 +83,10 @@ LOG_MODULE_REGISTER(cline46_status_adv, CONFIG_ZMK_LOG_LEVEL);
  * イベントが連続しても、広告の書き換えは 1 回にまとめる */
 #define REFRESH_DEBOUNCE_MS 50
 
+/* お別れパケットを流す間隔。この間だけ広告を詰めて出す。
+ * 1 パケット落ちても届くよう、停止までに数回ぶんが入る長さにしてある */
+#define FAREWELL_INTERVAL_MS 200
+
 static struct bt_le_ext_adv *adv_set;
 static struct k_work_delayable adv_work;
 static uint32_t current_interval_ms;
@@ -103,6 +107,8 @@ static uint8_t keyboard_id;
  * あれば settings_load() がこれを上書きする（main() の中で、広告を
  * 始める CONFIG_CLINE46_STATUS_ADV_START_DELAY_S 秒より前に走る） */
 static bool enabled = IS_ENABLED(CONFIG_CLINE46_STATUS_ADV_DEFAULT_ON);
+/* お別れパケットを流し終えたか。オンに戻すたびに false へ戻す */
+static bool farewell_sent;
 
 static const struct bt_data adv_data[] = {
     BT_DATA(BT_DATA_MANUFACTURER_DATA, (const uint8_t *)&payload, sizeof(payload)),
@@ -492,11 +498,35 @@ static void adv_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
 
     if (!enabled) {
+        /*
+         * いきなり黙ると、受信側は沈黙のタイムアウト（15〜35秒）が過ぎるまで
+         * 「圏外なのか、止められたのか」を区別できない。そこで停止の直前に
+         * 「これから止める」フラグを立てたパケットを短い間隔でしばらく流す。
+         * current_interval_ms が 0 なら、そもそもまだ広告を出していない
+         */
+        if (CONFIG_CLINE46_STATUS_ADV_FAREWELL_MS > 0 && !farewell_sent && adv_set != NULL &&
+            current_interval_ms != 0 && adv_ensure_started(FAREWELL_INTERVAL_MS) == 0) {
+            build_payload();
+            payload.flags |= CLINE46_STATUS_FLAG_ADV_STOPPING;
+
+            int err = bt_le_ext_adv_set_data(adv_set, adv_data, ARRAY_SIZE(adv_data), NULL, 0);
+            if (err == 0) {
+                farewell_sent = true;
+                k_work_schedule(&adv_work, K_MSEC(CONFIG_CLINE46_STATUS_ADV_FAREWELL_MS));
+                return;
+            }
+            LOG_WRN("Failed to set farewell advertising data (%d)", err);
+        }
+
         /* 止めるだけで広告セットは残す。付け直しは間隔の変更と同じ手順で
          * 済むので、再開は次のワークで即座にできる */
         adv_stop();
+        farewell_sent = false;
         return;
     }
+
+    /* オンに戻した。次に止めるときはまたお別れを流す */
+    farewell_sent = false;
 
     if (!bt_is_ready()) {
         k_work_schedule(&adv_work, K_SECONDS(1));

@@ -37,9 +37,14 @@ ZMK 自身もプロファイル用の広告と、`&studio_unlock` 後の directe
 `&status_adv SADV_TOG` を置いてあります。DYA Studio のキーマップエディタにも
 **Status Broadcast** として出るので、好きなキーに移せます。
 
-- 止めている間は `bt_le_ext_adv_stop()` で広告そのものが出なくなります。受信側は
-  ライブラリのアイドルタイムアウト（35秒）を過ぎると受信が途切れた扱いになります
-  （AtomS3R 版の表示は `NO SIGNAL`）。オンに戻すと数秒で復帰します
+- 止める直前に、`CLINE46_STATUS_FLAG_ADV_STOPPING` を立てた「お別れ」パケットを
+  200ms 間隔で `CONFIG_CLINE46_STATUS_ADV_FAREWELL_MS`（既定1000ms）のあいだ流してから
+  停止します。受信側はこれで**沈黙のタイムアウトを待たずに**「圏外」ではなく
+  「意図的に止められた」と判断できます（ライブラリの `broadcastOff()`、
+  AtomS3R 版は橙の電源マークの画面になります）。0 にすると即座に停止します
+- お別れパケットが1つも届かなかった場合は、従来どおり沈黙から判断します
+  （操作中なら約15秒、アイドル中なら最大45秒）
+- オンに戻すと数秒で復帰します
 - **切り替えた状態は保存され、次の起動でも引き継がれます**
   （`CONFIG_CLINE46_STATUS_ADV_PERSIST`、既定 y）。
   保存が無いときにどちらで始めるかは `CONFIG_CLINE46_STATUS_ADV_DEFAULT_ON`（既定 y）
