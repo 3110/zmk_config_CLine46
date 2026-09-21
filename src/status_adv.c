@@ -1,0 +1,423 @@
+/*
+ * CLine46 ステータスブロードキャスト。
+ *
+ * 右手（Central）が自分の状態を BLE の非接続広告に載せて流す。受信側
+ * （M5Stack など）はスキャンするだけでよく、接続もペアリングも要らないので、
+ * BLE プロファイル（5個）も BT_MAX_CONN も消費しない。
+ *
+ * ZMK 自身の広告（プロファイル用／Studio の directed advertising）と衝突
+ * させないため、拡張広告のセットを 1 つ別に確保して、そこにレガシーの
+ * 非接続 PDU を流している（CONFIG_BT_EXT_ADV）。ZMK 側の広告は
+ * bt_le_adv_start() の従来 API のままセット 0 を使う。
+ *
+ * ペイロードの中身は include/cline46/status_adv.h、バイト配置の説明は
+ * docs/status-advertisement.md を参照。
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/hwinfo.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/util.h>
+#include <stdint.h>
+#include <string.h>
+
+#include <zmk/activity.h>
+#include <zmk/battery.h>
+#include <zmk/ble.h>
+#include <zmk/endpoints.h>
+#include <zmk/event_manager.h>
+#include <zmk/keymap.h>
+#include <zmk/usb.h>
+
+#include <zmk/events/activity_state_changed.h>
+#include <zmk/events/battery_state_changed.h>
+#include <zmk/events/ble_active_profile_changed.h>
+#include <zmk/events/endpoint_changed.h>
+#include <zmk/events/layer_state_changed.h>
+
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
+#include <zmk/events/split_peripheral_status_changed.h>
+#endif
+
+#if IS_ENABLED(CONFIG_ZMK_STUDIO)
+#include <zmk/studio/core.h>
+#endif
+
+#if IS_ENABLED(CONFIG_ZMK_OS_DETECTION)
+#include <cormoran/os-detection/os_detection.h>
+#endif
+
+#if IS_ENABLED(CONFIG_ZMK_DEFAULT_LAYER)
+#include <cormoran/default-layer/default_layer.h>
+#endif
+
+#if IS_ENABLED(CONFIG_ZMK_WATCHDOG)
+#include <cormoran/zmk/watchdog.h>
+#endif
+
+#include <cline46/status_adv.h>
+
+LOG_MODULE_REGISTER(cline46_status_adv, CONFIG_ZMK_LOG_LEVEL);
+
+/* 広告間隔の単位は 0.625ms */
+#define MS_TO_ADV_INTERVAL(ms) ((uint16_t)((ms) * 8 / 5))
+
+/* イベントで即時更新するときの合流待ち。レイヤーのホールドなどで
+ * イベントが連続しても、広告の書き換えは 1 回にまとめる */
+#define REFRESH_DEBOUNCE_MS 50
+
+static struct bt_le_ext_adv *adv_set;
+static struct k_work_delayable adv_work;
+static uint32_t current_interval_ms;
+
+static struct cline46_status_adv_payload payload;
+
+/* イベントでしか取れない値はここに持っておく */
+static uint8_t peripheral_pct = CLINE46_STATUS_PCT_UNKNOWN;
+static bool peripheral_connected;
+static uint8_t reset_reason = CLINE46_STATUS_RESET_UNKNOWN;
+static uint8_t keyboard_id;
+
+static const struct bt_data adv_data[] = {
+    BT_DATA(BT_DATA_MANUFACTURER_DATA, (const uint8_t *)&payload, sizeof(payload)),
+};
+
+#if DT_HAS_CHOSEN(zmk_battery)
+static const struct device *const battery_dev = DEVICE_DT_GET(DT_CHOSEN(zmk_battery));
+#endif
+
+/*
+ * 電池電圧。ZMK の battery.c が CONFIG_ZMK_BATTERY_REPORT_INTERVAL_S ごとに
+ * sensor_sample_fetch() を済ませているので、こちらは読むだけにして余計な
+ * ADC 測定はしない（測定しないぶん電池も食わない）。まだ 1 度も測定されて
+ * いない起動直後は 0 が返る。
+ */
+static uint16_t read_battery_mv(void) {
+#if DT_HAS_CHOSEN(zmk_battery)
+    struct sensor_value value;
+
+    if (!device_is_ready(battery_dev)) {
+        return CLINE46_STATUS_MV_UNKNOWN;
+    }
+
+    if (sensor_channel_get(battery_dev, SENSOR_CHAN_GAUGE_VOLTAGE, &value) < 0) {
+        return CLINE46_STATUS_MV_UNKNOWN;
+    }
+
+    int32_t mv = value.val1 * 1000 + value.val2 / 1000;
+    if (mv <= 0 || mv > UINT16_MAX) {
+        return CLINE46_STATUS_MV_UNKNOWN;
+    }
+
+    return (uint16_t)mv;
+#else
+    return CLINE46_STATUS_MV_UNKNOWN;
+#endif
+}
+
+static uint8_t map_reset_reason(uint32_t cause) {
+    /* 複数ビットが同時に立つことがあるので、原因として知りたい順に見る */
+    if (cause & RESET_WATCHDOG) {
+        return CLINE46_STATUS_RESET_WATCHDOG;
+    }
+    if (cause & RESET_BROWNOUT) {
+        return CLINE46_STATUS_RESET_BROWNOUT;
+    }
+    if (cause & RESET_SOFTWARE) {
+        return CLINE46_STATUS_RESET_SOFTWARE;
+    }
+    if (cause & RESET_PIN) {
+        return CLINE46_STATUS_RESET_PIN;
+    }
+    if (cause & RESET_LOW_POWER_WAKE) {
+        return CLINE46_STATUS_RESET_LOW_POWER_WAKE;
+    }
+    if (cause & RESET_DEBUG) {
+        return CLINE46_STATUS_RESET_DEBUG;
+    }
+    if (cause & RESET_POR) {
+        return CLINE46_STATUS_RESET_POWER_ON;
+    }
+    return cause ? CLINE46_STATUS_RESET_OTHER : CLINE46_STATUS_RESET_UNKNOWN;
+}
+
+static uint8_t incident_count(void) {
+#if IS_ENABLED(CONFIG_ZMK_WATCHDOG)
+    uint16_t count = zmk_watchdog_store_count();
+    return count > UINT8_MAX ? UINT8_MAX : (uint8_t)count;
+#else
+    return 0;
+#endif
+}
+
+static uint8_t current_os(void) {
+#if IS_ENABLED(CONFIG_ZMK_OS_DETECTION)
+    return (uint8_t)zmk_os_detection_current() & 0x0F;
+#else
+    return CLINE46_STATUS_OS_UNKNOWN;
+#endif
+}
+
+static uint8_t current_default_layer(void) {
+#if IS_ENABLED(CONFIG_ZMK_DEFAULT_LAYER)
+    int32_t layer = zmk_default_layer_resolve_current();
+    if (layer < 0 || layer >= CLINE46_STATUS_DEFAULT_LAYER_NONE) {
+        return CLINE46_STATUS_DEFAULT_LAYER_NONE;
+    }
+    return (uint8_t)layer;
+#else
+    return CLINE46_STATUS_DEFAULT_LAYER_NONE;
+#endif
+}
+
+static uint8_t current_flags(void) {
+    uint8_t flags = 0;
+
+    if (zmk_usb_is_powered()) {
+        flags |= CLINE46_STATUS_FLAG_USB_POWERED;
+    }
+    if (zmk_usb_is_hid_ready()) {
+        flags |= CLINE46_STATUS_FLAG_USB_HID_READY;
+    }
+    if (zmk_endpoint_get_selected().transport == ZMK_TRANSPORT_BLE) {
+        flags |= CLINE46_STATUS_FLAG_OUTPUT_BLE;
+    }
+#if IS_ENABLED(CONFIG_ZMK_STUDIO)
+    if (zmk_studio_core_get_lock_state() == ZMK_STUDIO_CORE_LOCK_STATE_UNLOCKED) {
+        flags |= CLINE46_STATUS_FLAG_STUDIO_UNLOCKED;
+    }
+#endif
+    if (peripheral_connected) {
+        flags |= CLINE46_STATUS_FLAG_SPLIT_CONNECTED;
+    }
+    if (zmk_activity_get_state() == ZMK_ACTIVITY_IDLE) {
+        flags |= CLINE46_STATUS_FLAG_IDLE;
+    }
+
+    return flags;
+}
+
+static void fill_layer(void) {
+    zmk_keymap_layer_index_t index = zmk_keymap_highest_layer_active();
+    zmk_keymap_layer_id_t id = zmk_keymap_layer_index_to_id(index);
+    const char *name = zmk_keymap_layer_name(id);
+
+    payload.layer_index = (uint8_t)index;
+
+    memset(payload.layer_name, 0, sizeof(payload.layer_name));
+    if (name != NULL) {
+        /* 4文字ちょうどなら終端は入らない。受信側は長さ4として読む */
+        strncpy(payload.layer_name, name, sizeof(payload.layer_name));
+    }
+}
+
+static void build_payload(void) {
+    payload.company_id = CLINE46_STATUS_ADV_COMPANY_ID;
+    payload.magic[0] = CLINE46_STATUS_ADV_MAGIC_0;
+    payload.magic[1] = CLINE46_STATUS_ADV_MAGIC_1;
+    payload.version = CLINE46_STATUS_ADV_VERSION;
+    payload.keyboard_id = keyboard_id;
+
+    fill_layer();
+
+    payload.central_mv = read_battery_mv();
+    payload.central_pct = zmk_battery_state_of_charge();
+    payload.peripheral_pct = peripheral_pct;
+
+    payload.os_default_layer = (current_os() << 4) | current_default_layer();
+
+    int profile = zmk_ble_active_profile_index();
+    payload.profile = (uint8_t)(profile < 0 ? 0 : profile) & CLINE46_STATUS_PROFILE_INDEX_MASK;
+    if (zmk_ble_active_profile_is_connected()) {
+        payload.profile |= CLINE46_STATUS_PROFILE_CONNECTED;
+    }
+    if (zmk_ble_active_profile_is_open()) {
+        payload.profile |= CLINE46_STATUS_PROFILE_OPEN;
+    }
+
+    payload.flags = current_flags();
+
+    int64_t minutes = k_uptime_get() / 60000;
+    payload.uptime_min = minutes > UINT16_MAX ? UINT16_MAX : (uint16_t)minutes;
+
+    payload.reset_reason = reset_reason;
+    payload.incident_count = incident_count();
+}
+
+static void adv_stop(void) {
+    if (adv_set == NULL) {
+        return;
+    }
+
+    int err = bt_le_ext_adv_stop(adv_set);
+    if (err < 0 && err != -EALREADY) {
+        LOG_WRN("Failed to stop status advertising (%d)", err);
+    }
+    current_interval_ms = 0;
+}
+
+/* 広告セットが無ければ作り、間隔が変わっていれば作り直してから流し始める */
+static int adv_ensure_started(uint32_t interval_ms) {
+    struct bt_le_adv_param param = {
+        .id = BT_ID_DEFAULT,
+        .sid = 0,
+        .secondary_max_skip = 0,
+        .options = 0, /* 非接続・非スキャン応答のレガシー広告 */
+        .interval_min = MS_TO_ADV_INTERVAL(interval_ms),
+        .interval_max = MS_TO_ADV_INTERVAL(interval_ms) + 16,
+        .peer = NULL,
+    };
+    int err;
+
+    if (adv_set == NULL) {
+        err = bt_le_ext_adv_create(&param, NULL, &adv_set);
+        if (err < 0) {
+            LOG_ERR("Failed to create status advertising set (%d)", err);
+            adv_set = NULL;
+            return err;
+        }
+        current_interval_ms = 0;
+    }
+
+    if (current_interval_ms == interval_ms) {
+        return 0;
+    }
+
+    /* 間隔の変更は広告を止めてからでないと通らない */
+    bt_le_ext_adv_stop(adv_set);
+
+    err = bt_le_ext_adv_update_param(adv_set, &param);
+    if (err < 0) {
+        LOG_ERR("Failed to update status advertising param (%d)", err);
+        return err;
+    }
+
+    err = bt_le_ext_adv_start(adv_set, BT_LE_EXT_ADV_START_DEFAULT);
+    if (err < 0) {
+        LOG_ERR("Failed to start status advertising (%d)", err);
+        /* スリープ復帰直後などでセットが無効になっていることがあるので、
+         * 作り直せるように捨てる */
+        bt_le_ext_adv_delete(adv_set);
+        adv_set = NULL;
+        current_interval_ms = 0;
+        return err;
+    }
+
+    current_interval_ms = interval_ms;
+    LOG_DBG("Status advertising at %u ms", interval_ms);
+
+    return 0;
+}
+
+static void adv_work_handler(struct k_work *work) {
+    ARG_UNUSED(work);
+
+    if (!bt_is_ready()) {
+        k_work_schedule(&adv_work, K_SECONDS(1));
+        return;
+    }
+
+    enum zmk_activity_state activity = zmk_activity_get_state();
+    if (activity == ZMK_ACTIVITY_SLEEP) {
+        /* ディープスリープ中は無線ごと止まる。起きたら
+         * activity_state_changed で戻ってくる */
+        adv_stop();
+        return;
+    }
+
+    uint32_t interval_ms = (activity == ZMK_ACTIVITY_IDLE)
+                               ? CONFIG_CLINE46_STATUS_ADV_IDLE_INTERVAL_MS
+                               : CONFIG_CLINE46_STATUS_ADV_INTERVAL_MS;
+
+    if (adv_ensure_started(interval_ms) < 0) {
+        k_work_schedule(&adv_work, K_SECONDS(5));
+        return;
+    }
+
+    build_payload();
+
+    int err = bt_le_ext_adv_set_data(adv_set, adv_data, ARRAY_SIZE(adv_data), NULL, 0);
+    if (err < 0) {
+        LOG_WRN("Failed to set status advertising data (%d)", err);
+    }
+
+    k_work_schedule(&adv_work, K_MSEC(interval_ms));
+}
+
+static void refresh_soon(void) { k_work_reschedule(&adv_work, K_MSEC(REFRESH_DEBOUNCE_MS)); }
+
+static int status_adv_listener(const zmk_event_t *eh) {
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
+    const struct zmk_peripheral_battery_state_changed *peripheral_battery =
+        as_zmk_peripheral_battery_state_changed(eh);
+    if (peripheral_battery != NULL) {
+        /* 左手は 1 台だけ。それ以外の source は無視する */
+        if (peripheral_battery->source == 0) {
+            peripheral_pct = peripheral_battery->state_of_charge;
+        }
+        refresh_soon();
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+
+    const struct zmk_split_peripheral_status_changed *split_status =
+        as_zmk_split_peripheral_status_changed(eh);
+    if (split_status != NULL) {
+        peripheral_connected = split_status->connected;
+        if (!split_status->connected) {
+            peripheral_pct = CLINE46_STATUS_PCT_UNKNOWN;
+        }
+        refresh_soon();
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+#endif
+
+    refresh_soon();
+    return ZMK_EV_EVENT_BUBBLE;
+}
+
+ZMK_LISTENER(cline46_status_adv, status_adv_listener);
+ZMK_SUBSCRIPTION(cline46_status_adv, zmk_layer_state_changed);
+ZMK_SUBSCRIPTION(cline46_status_adv, zmk_battery_state_changed);
+ZMK_SUBSCRIPTION(cline46_status_adv, zmk_ble_active_profile_changed);
+ZMK_SUBSCRIPTION(cline46_status_adv, zmk_endpoint_changed);
+ZMK_SUBSCRIPTION(cline46_status_adv, zmk_activity_state_changed);
+
+#if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
+ZMK_SUBSCRIPTION(cline46_status_adv, zmk_peripheral_battery_state_changed);
+ZMK_SUBSCRIPTION(cline46_status_adv, zmk_split_peripheral_status_changed);
+#endif
+
+#if IS_ENABLED(CONFIG_ZMK_STUDIO)
+ZMK_SUBSCRIPTION(cline46_status_adv, zmk_studio_core_lock_state_changed);
+#endif
+
+#if IS_ENABLED(CONFIG_ZMK_OS_DETECTION)
+ZMK_SUBSCRIPTION(cline46_status_adv, zmk_os_changed);
+#endif
+
+static int cline46_status_adv_init(void) {
+    uint32_t cause = 0;
+    uint8_t device_id[8];
+
+    if (hwinfo_get_reset_cause(&cause) == 0) {
+        reset_reason = map_reset_reason(cause);
+    }
+
+    /* 同じ広告を出すキーボードが複数あっても区別できるようにしておく */
+    if (hwinfo_get_device_id(device_id, sizeof(device_id)) > 0) {
+        keyboard_id = device_id[0];
+    }
+
+    k_work_init_delayable(&adv_work, adv_work_handler);
+    k_work_schedule(&adv_work, K_SECONDS(CONFIG_CLINE46_STATUS_ADV_START_DELAY_S));
+
+    return 0;
+}
+
+SYS_INIT(cline46_status_adv_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);

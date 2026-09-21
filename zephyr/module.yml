@@ -1,4 +1,8 @@
 name: CLine46
 build:
+  # src/ のコードを足すために cmake と kconfig を宣言している
+  # （board_root だけだった頃は shield の定義しか持っていなかった）
+  cmake: .
+  kconfig: Kconfig
   settings:
     board_root: .

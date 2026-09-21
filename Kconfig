@@ -1,0 +1,46 @@
+# CLine46 固有の設定。この設定リポジトリは Zephyr モジュールとして
+# 読み込まれる（build.yaml が渡す ZMK_EXTRA_MODULES）
+
+menuconfig CLINE46_STATUS_ADV
+    bool "CLine46: キーボードの状態を BLE 広告で流す"
+    depends on ZMK_BLE
+    select BT_EXT_ADV
+    select HWINFO
+    help
+      レイヤー・電池・接続状態などを BLE の非接続広告に載せて 1 秒ごとに
+      流す。受信側（M5Stack など）はスキャンするだけでよく、接続も
+      ペアリングも要らないので BLE プロファイルを消費しない。
+      ZMK 自身の広告と衝突しないよう拡張広告のセットを別に確保するため、
+      CONFIG_BT_EXT_ADV を有効にする。Central（右手）に入れること。
+      ペイロードの定義は include/cline46/status_adv.h を参照。
+
+if CLINE46_STATUS_ADV
+
+config CLINE46_STATUS_ADV_INTERVAL_MS
+    int "広告の間隔（ミリ秒、操作中）"
+    default 1000
+    range 100 10000
+    help
+      短くすると表示の追従が良くなるが、そのぶん電池を食う。
+
+config CLINE46_STATUS_ADV_IDLE_INTERVAL_MS
+    int "広告の間隔（ミリ秒、アイドル中）"
+    default 10000
+    range 1000 60000
+    help
+      CONFIG_ZMK_IDLE_TIMEOUT を過ぎてアイドルに入ったあとの間隔。
+      ディープスリープに入ると広告そのものを止める。
+
+config CLINE46_STATUS_ADV_START_DELAY_S
+    int "起動してから広告を始めるまでの秒数"
+    default 3
+    range 0 60
+    help
+      BLE スタックの初期化を待つための猶予。待っている間は 1 秒ごとに
+      bt_is_ready() を見て再試行するので、短すぎても失敗はしない。
+
+endif # CLINE46_STATUS_ADV
+
+# 拡張広告のセットは ZMK 本体の広告（セット0）とこちら（セット1）で 2 つ要る
+configdefault BT_EXT_ADV_MAX_ADV_SET
+    default 2 if CLINE46_STATUS_ADV
