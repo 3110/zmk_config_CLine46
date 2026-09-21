@@ -128,6 +128,11 @@ west build -s zmk/app -d build/left -b xiao_ble//zmk -- \
 
 1. `docs/release-notes/<タグ名>.md` にリリースノートを書いて、通常の作業と同じように
    `develop` に入れる（例: `docs/release-notes/v1.1.0.md`）
+
+   > ノートの中身はそのままリリースの本文になります。**ほかのファイルへのリンクは
+   > 相対パスではなく絶対 URL で書いてください**（例:
+   > `https://github.com/3110/zmk_config_CLine46/blob/v1.1.0/docs/build.md`）。
+   > リポジトリ上では相対パスでも開けますが、Releases のページでは解決されません。
 2. `develop` → `main` の PR を作り、**Create a merge commit** でマージする
 
    > squash と rebase は使わないでください。`main` のコミットが `develop` と別物になり、
