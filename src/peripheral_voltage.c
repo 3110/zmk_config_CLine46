@@ -19,6 +19,8 @@
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 #include <zmk/split/central.h>
 #else
+#include <zephyr/init.h>
+#include <zmk/events/split_peripheral_status_changed.h>
 #include <zmk/split/peripheral.h>
 #endif
 
@@ -61,15 +63,14 @@ ZMK_SUBSCRIPTION(cline46_peripheral_voltage, cline46_peripheral_voltage_changed)
 
 ZMK_RELAY_EVENT_PERIPHERAL_TO_CENTRAL(cline46_peripheral_voltage_changed, clv, source);
 
-static int peripheral_listener(const zmk_event_t *eh) {
-    if (as_zmk_battery_state_changed(eh) == NULL) {
-        return ZMK_EV_EVENT_BUBBLE;
-    }
+/* 接続してすぐは送信経路が整っていないことがあるので、少し待ってから送る */
+#define RECONNECT_SEND_DELAY_MS 2000
 
-    /* 残量(%)の更新と同じタイミング = ちょうど測り終わったところ */
+static void send_voltage(void) {
     uint16_t mv = cline46_battery_mv();
     if (mv == 0) {
-        return ZMK_EV_EVENT_BUBBLE;
+        /* まだ一度も測っていない（起動直後）。次の測定で送られる */
+        return;
     }
 
     struct cline46_peripheral_voltage_changed voltage = {
@@ -77,11 +78,35 @@ static int peripheral_listener(const zmk_event_t *eh) {
         .mv = mv,
     };
     raise_cline46_peripheral_voltage_changed(voltage);
+}
+
+static void reconnect_work_handler(struct k_work *work) {
+    ARG_UNUSED(work);
+    send_voltage();
+}
+
+static K_WORK_DELAYABLE_DEFINE(reconnect_work, reconnect_work_handler);
+
+static int peripheral_listener(const zmk_event_t *eh) {
+    if (as_zmk_battery_state_changed(eh) != NULL) {
+        /* 残量(%)の更新と同じタイミング = ちょうど測り終わったところ */
+        send_voltage();
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+
+    const struct zmk_split_peripheral_status_changed *status =
+        as_zmk_split_peripheral_status_changed(eh);
+    if (status != NULL && status->connected) {
+        /* 繋がった直後にも 1 回送る。これが無いと、右手が再起動したあと
+         * 次の電池測定（既定60秒ごと）まで左手の電圧が「不明」のままになる */
+        k_work_reschedule(&reconnect_work, K_MSEC(RECONNECT_SEND_DELAY_MS));
+    }
 
     return ZMK_EV_EVENT_BUBBLE;
 }
 
 ZMK_LISTENER(cline46_peripheral_voltage, peripheral_listener);
 ZMK_SUBSCRIPTION(cline46_peripheral_voltage, zmk_battery_state_changed);
+ZMK_SUBSCRIPTION(cline46_peripheral_voltage, zmk_split_peripheral_status_changed);
 
 #endif /* CONFIG_ZMK_SPLIT_ROLE_CENTRAL */

@@ -1,4 +1,9 @@
 /*
+ * include/cline46/status_adv.h のコピー。ファーム側を変えたらここも更新する
+ * （version の値が合わなければライブラリが versionMismatch() で知らせる）。
+ */
+
+/*
  * CLine46 ステータスブロードキャスト（BLE アドバタイズ）のペイロード定義。
  *
  * 右手（Central）が 1 秒ごとに非接続の広告を出し、M5Stack などの受信側は
@@ -66,6 +71,11 @@ enum cline46_status_reset_reason {
     CLINE46_STATUS_RESET_LOW_POWER_WAKE = 6, /* ディープスリープからの復帰 */
     CLINE46_STATUS_RESET_DEBUG = 7,
     CLINE46_STATUS_RESET_OTHER = 8,
+    /* 以下は hwinfo ではなく watchdog の記録から分かるもの。
+     * ブートローダが RESETREAS を消してしまう機種では、
+     * hwinfo 側が「不明」になるのでこちらが手掛かりになる */
+    CLINE46_STATUS_RESET_FREEZE = 9, /* フリーズを検出して再起動した */
+    CLINE46_STATUS_RESET_FAULT = 10, /* フォールトで落ちた */
 };
 
 /*

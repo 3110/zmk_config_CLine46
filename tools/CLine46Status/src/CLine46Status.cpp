@@ -233,6 +233,10 @@ const char *CLine46Status::resetReasonName() const {
         return "デバッガ";
     case CLINE46_STATUS_RESET_OTHER:
         return "その他";
+    case CLINE46_STATUS_RESET_FREEZE:
+        return "フリーズ検出";
+    case CLINE46_STATUS_RESET_FAULT:
+        return "フォールト";
     default:
         return "不明";
     }

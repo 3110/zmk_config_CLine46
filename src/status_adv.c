@@ -143,6 +143,57 @@ static bool split_peripheral_connected(void) {
     return false;
 }
 
+#if IS_ENABLED(CONFIG_ZMK_WATCHDOG)
+/*
+ * hwinfo のリセット原因は当てにならないことがある。nRF52 では電源投入で
+ * RESETREAS が 0 のままだし、UF2 ブートローダが消してしまう場合もある。
+ * そのときは watchdog に残っている記録のうち一番新しいものを手掛かりにする。
+ * 記録は RAM 上の配列に載っているので、毎回読んでも負荷にならない。
+ */
+static uint8_t reason_from_watchdog(void) {
+    struct zmk_watchdog_incident_record newest = {0};
+    uint16_t count = zmk_watchdog_store_count();
+    bool found = false;
+
+    for (uint16_t i = 0; i < count; i++) {
+        struct zmk_watchdog_incident_record rec;
+        if (zmk_watchdog_store_get(i, &rec) < 0) {
+            continue;
+        }
+        /* boot_ordinal は記録のたびに増える。同じ起動内は uptime で比べる */
+        if (!found || rec.boot_ordinal > newest.boot_ordinal ||
+            (rec.boot_ordinal == newest.boot_ordinal && rec.uptime_s > newest.uptime_s)) {
+            newest = rec;
+            found = true;
+        }
+    }
+
+    if (!found) {
+        return CLINE46_STATUS_RESET_UNKNOWN;
+    }
+
+    switch (newest.type) {
+    case ZMK_WATCHDOG_INCIDENT_FREEZE:
+        return CLINE46_STATUS_RESET_FREEZE;
+    case ZMK_WATCHDOG_INCIDENT_FATAL:
+        return CLINE46_STATUS_RESET_FAULT;
+    case ZMK_WATCHDOG_INCIDENT_RESET_CAUSE:
+        return map_reset_reason(newest.detail.reset.cause_bits);
+    default:
+        return CLINE46_STATUS_RESET_UNKNOWN;
+    }
+}
+#endif
+
+static uint8_t current_reset_reason(void) {
+#if IS_ENABLED(CONFIG_ZMK_WATCHDOG)
+    if (reset_reason == CLINE46_STATUS_RESET_UNKNOWN) {
+        return reason_from_watchdog();
+    }
+#endif
+    return reset_reason;
+}
+
 static uint8_t incident_count(void) {
 #if IS_ENABLED(CONFIG_ZMK_WATCHDOG)
     uint16_t count = zmk_watchdog_store_count();
@@ -253,7 +304,7 @@ static void build_payload(void) {
     int64_t minutes = k_uptime_get() / 60000;
     payload.uptime_min = minutes > UINT16_MAX ? UINT16_MAX : (uint16_t)minutes;
 
-    payload.reset_reason = reset_reason;
+    payload.reset_reason = current_reset_reason();
     payload.incident_count = incident_count();
 }
 
