@@ -27,6 +27,10 @@ static M5Canvas canvas(&M5.Display);
 static const int16_t SCREEN_W = 128;
 static const int16_t SCREEN_H = 128;
 
+/* 画面の向き。0=標準 / 1=90度 / 2=180度 / 3=270度。
+ * USB ケーブルを上に出して置くなら 2（180度回転） */
+static const uint8_t SCREEN_ROTATION = 2;
+
 /* レイアウト（y 座標） */
 static const int16_t HEADER_Y = 2;
 static const int16_t LAYER_CY = 44;  /* レイヤー名の中心 */
@@ -246,7 +250,7 @@ void setup() {
   auto cfg = M5.config();
   M5.begin(cfg);
 
-  M5.Display.setRotation(0);
+  M5.Display.setRotation(SCREEN_ROTATION);
   M5.Display.fillScreen(TFT_BLACK);
   applyBrightness();
 
