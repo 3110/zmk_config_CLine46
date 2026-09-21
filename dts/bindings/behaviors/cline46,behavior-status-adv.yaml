@@ -1,0 +1,8 @@
+# Copyright (c) 2026 3110
+# SPDX-License-Identifier: MIT
+
+description: Behavior to turn the CLine46 status advertisement on and off
+
+compatible: "cline46,behavior-status-adv"
+
+include: one_param.yaml

@@ -66,8 +66,13 @@
 #include <cline46/peripheral_voltage.h>
 #endif
 
+#if IS_ENABLED(CONFIG_CLINE46_STATUS_ADV_PERSIST)
+#include <zephyr/settings/settings.h>
+#endif
+
 #include <cline46/battery_mv.h>
 #include <cline46/status_adv.h>
+#include <cline46/status_adv_control.h>
 
 LOG_MODULE_REGISTER(cline46_status_adv, CONFIG_ZMK_LOG_LEVEL);
 
@@ -93,6 +98,11 @@ static bool central_battery_seen;
 static bool peripheral_was_connected;
 static uint8_t reset_reason = CLINE46_STATUS_RESET_UNKNOWN;
 static uint8_t keyboard_id;
+
+/* 受信側を使っていないときは &status_adv で止められる。保存した設定が
+ * あれば settings_load() がこれを上書きする（main() の中で、広告を
+ * 始める CONFIG_CLINE46_STATUS_ADV_START_DELAY_S 秒より前に走る） */
+static bool enabled = IS_ENABLED(CONFIG_CLINE46_STATUS_ADV_DEFAULT_ON);
 
 static const struct bt_data adv_data[] = {
     BT_DATA(BT_DATA_MANUFACTURER_DATA, (const uint8_t *)&payload, sizeof(payload)),
@@ -340,6 +350,79 @@ static void build_payload(void) {
     payload.incident_count = incident_count();
 }
 
+#if IS_ENABLED(CONFIG_CLINE46_STATUS_ADV_PERSIST)
+
+#define SETTINGS_SUBTREE "cline46_adv"
+#define SETTINGS_KEY_ENABLED "enabled"
+
+static void save_work_handler(struct k_work *work) {
+    ARG_UNUSED(work);
+
+    uint8_t value = enabled ? 1 : 0;
+    int err = settings_save_one(SETTINGS_SUBTREE "/" SETTINGS_KEY_ENABLED, &value, sizeof(value));
+    if (err < 0) {
+        LOG_WRN("Failed to save status advertising state (%d)", err);
+    }
+}
+
+static K_WORK_DELAYABLE_DEFINE(save_work, save_work_handler);
+
+/* 連打されても書き込みは 1 回にまとめる（ZMK 本体と同じ作法） */
+static void save_soon(void) {
+    k_work_reschedule(&save_work, K_MSEC(CONFIG_ZMK_SETTINGS_SAVE_DEBOUNCE));
+}
+
+static int status_adv_settings_set(const char *name, size_t len, settings_read_cb read_cb,
+                                   void *cb_arg) {
+    if (!settings_name_steq(name, SETTINGS_KEY_ENABLED, NULL)) {
+        return 0;
+    }
+
+    uint8_t value;
+    if (len != sizeof(value)) {
+        LOG_WRN("Unexpected size for saved status advertising state (%zu)", len);
+        return -EINVAL;
+    }
+
+    ssize_t len_read = read_cb(cb_arg, &value, sizeof(value));
+    if (len_read < 0) {
+        LOG_WRN("Failed to read saved status advertising state (%d)", (int)len_read);
+        return (int)len_read;
+    }
+
+    enabled = value != 0;
+    LOG_DBG("Status advertising restored to %s", enabled ? "on" : "off");
+
+    return 0;
+}
+
+SETTINGS_STATIC_HANDLER_DEFINE(cline46_status_adv, SETTINGS_SUBTREE, NULL, status_adv_settings_set,
+                               NULL, NULL);
+
+#else
+
+static void save_soon(void) {}
+
+#endif /* IS_ENABLED(CONFIG_CLINE46_STATUS_ADV_PERSIST) */
+
+bool cline46_status_adv_is_enabled(void) { return enabled; }
+
+int cline46_status_adv_set_enabled(bool on) {
+    if (enabled == on) {
+        return 0;
+    }
+
+    enabled = on;
+    LOG_INF("Status advertising turned %s", on ? "on" : "off");
+
+    /* 広告の開始・停止はワークの中だけで行う。どのスレッドから呼ばれても
+     * 同じワークキュー上に直列化されるので、bt_le_ext_adv_* が競合しない */
+    k_work_reschedule(&adv_work, K_NO_WAIT);
+    save_soon();
+
+    return 0;
+}
+
 static void adv_stop(void) {
     if (adv_set == NULL) {
         return;
@@ -408,6 +491,13 @@ static int adv_ensure_started(uint32_t interval_ms) {
 static void adv_work_handler(struct k_work *work) {
     ARG_UNUSED(work);
 
+    if (!enabled) {
+        /* 止めるだけで広告セットは残す。付け直しは間隔の変更と同じ手順で
+         * 済むので、再開は次のワークで即座にできる */
+        adv_stop();
+        return;
+    }
+
     if (!bt_is_ready()) {
         k_work_schedule(&adv_work, K_SECONDS(1));
         return;
@@ -440,7 +530,14 @@ static void adv_work_handler(struct k_work *work) {
     k_work_schedule(&adv_work, K_MSEC(interval_ms));
 }
 
-static void refresh_soon(void) { k_work_reschedule(&adv_work, K_MSEC(REFRESH_DEBOUNCE_MS)); }
+static void refresh_soon(void) {
+    /* 止めている間はイベントが来ても起こさない */
+    if (!enabled) {
+        return;
+    }
+
+    k_work_reschedule(&adv_work, K_MSEC(REFRESH_DEBOUNCE_MS));
+}
 
 static int status_adv_listener(const zmk_event_t *eh) {
     if (as_zmk_battery_state_changed(eh) != NULL) {

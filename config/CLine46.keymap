@@ -16,6 +16,13 @@
 // (&df DF_INC = 候補を巡回 / &df DF_SEL N = レイヤー N を既定にする)
 #include <behaviors/default_layer.dtsi>
 
+// キーボードの状態を流す BLE 広告(docs/status-advertisement.md)を
+// キーで止められるようにするビヘイビア。M5Stack 側を使わないときは
+// 出しておく意味が無いので、SCROLL レイヤーに &status_adv SADV_TOG を
+// 置いてある。SADV_ON / SADV_OFF で決め打ちもできる
+#include <behaviors/status_adv.dtsi>
+#include <dt-bindings/cline46/status_adv.h>
+
 &mt {
     flavor = "balanced";
     quick-tap-ms = <0>;
@@ -108,7 +115,7 @@
 
         SCROLL {
             bindings = <
-&bt BT_CLR       &trans   &trans         &trans         &sys_reset     &bootloader                                 &bootloader   &sys_reset   &trans   &trans   &trans   &trans
+&bt BT_CLR       &trans   &trans         &trans         &sys_reset     &bootloader                                 &bootloader   &sys_reset   &status_adv SADV_TOG   &trans   &trans   &trans
 &bt BT_CLR_ALL   &trans   &bt BT_SEL 4   &trans         &trans         &trans                                      &trans        &trans       &trans   &trans   &trans   &trans
 &trans           &trans   &bt BT_SEL 1   &bt BT_SEL 2   &bt BT_SEL 3   &trans                                      &trans        &trans       &trans   &trans   &trans   &trans
                  &trans   &bt BT_SEL 0   &trans         &trans         &trans         &trans      &studio_unlock   &trans                     &trans   &trans  

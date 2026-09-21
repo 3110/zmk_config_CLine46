@@ -6,3 +6,6 @@ build:
   kconfig: Kconfig
   settings:
     board_root: .
+    # dts/behaviors（&status_adv の定義）と dts/bindings、
+    # include/dt-bindings（SADV_* の定義）をキーマップから見えるようにする
+    dts_root: .

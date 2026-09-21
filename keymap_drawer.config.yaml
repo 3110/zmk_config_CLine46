@@ -4,6 +4,7 @@ parse_config:
     "&mkp MB2": 右click
     "&mkp MB3": 中click
     "&studio_unlock": Studio解除
+    "&status_adv SADV_TOG": 広告ON/OFF
     "&bootloader": BOOT
     "&sys_reset": RESET
   trans_legend:

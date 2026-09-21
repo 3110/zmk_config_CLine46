@@ -39,6 +39,25 @@ config CLINE46_STATUS_ADV_INIT_PRIORITY
       リセット原因（hwinfo）を zmk-feature-watchdog が消すより前に読むため、
       既定の APPLICATION 優先度（90）より小さい値にしてある。
 
+config CLINE46_STATUS_ADV_DEFAULT_ON
+    bool "起動直後から広告を出す"
+    default y
+    help
+      保存された設定が無いとき（初回起動や設定リセットの後）にどちらから
+      始めるか。&status_adv で切り替えたあとは、そちらが優先される
+      （CONFIG_CLINE46_STATUS_ADV_PERSIST が有効な場合）。
+      n にすると、使うときだけキーで入れる運用になる。
+
+config CLINE46_STATUS_ADV_PERSIST
+    bool "&status_adv での切り替えを保存する"
+    depends on SETTINGS
+    default y
+    help
+      オン/オフを settings に保存して、次の起動でも引き継ぐ。
+      無効にすると、起動のたびに CONFIG_CLINE46_STATUS_ADV_DEFAULT_ON の
+      状態に戻る。書き込みは ZMK 本体と同じく少し遅らせてまとめるので、
+      連打してもフラッシュを余計に減らさない。
+
 config CLINE46_STATUS_ADV_START_DELAY_S
     int "起動してから広告を始めるまでの秒数"
     default 3

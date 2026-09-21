@@ -1,0 +1,25 @@
+/*
+ * ステータス広告のオン/オフを切り替えるビヘイビア。
+ *
+ * ノードは左右どちらのビルドにも入るが、実体（ドライバ）は
+ * CONFIG_CLINE46_STATUS_ADV を有効にした Central だけでビルドされる。
+ * キーマップを処理するのは Central だけなので、Peripheral 側で参照が
+ * 解決できなくても問題にならない（ZMK 本体の &ext_power などと同じ作り）。
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#include <dt-bindings/zmk/behaviors.h>
+
+/ {
+    behaviors {
+#if ZMK_BEHAVIOR_OMIT(STATUS_ADV)
+        /omit-if-no-ref/
+#endif
+        status_adv: statusadv {
+            compatible = "cline46,behavior-status-adv";
+            #binding-cells = <1>;
+            display-name = "Status Broadcast";
+        };
+    };
+};
