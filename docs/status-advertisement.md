@@ -43,9 +43,10 @@ ZMK 自身もプロファイル用の広告と、`&studio_unlock` 後の directe
 - **切り替えた状態は保存され、次の起動でも引き継がれます**
   （`CONFIG_CLINE46_STATUS_ADV_PERSIST`、既定 y）。
   保存が無いときにどちらで始めるかは `CONFIG_CLINE46_STATUS_ADV_DEFAULT_ON`（既定 y）
-- 保存は ZMK 本体と同じく `CONFIG_ZMK_SETTINGS_SAVE_DEBOUNCE`（**既定60秒**）だけ
-  遅らせてまとめます。フラッシュを余計に減らさないためですが、**切り替えた直後に
-  電源を切ると保存前の状態に戻ります**
+- 保存は ZMK 本体と同じく `CONFIG_ZMK_SETTINGS_SAVE_DEBOUNCE` だけ遅らせて
+  まとめます（ZMK の既定は60秒ですが、このリポジトリは `CLine46_R.conf` で
+  **10秒**にしています）。フラッシュを余計に減らさないためですが、
+  **切り替えてから10秒以内に電源を切ると保存前の状態に戻ります**
 - 広告を出すのも切り替えを処理するのも右手（Central）です。ビヘイビアの locality は
   既定の `BEHAVIOR_LOCALITY_CENTRAL` なので、**左手のキーに割り当てても動きます**
 - 消費電流の差はごくわずかです（1秒間隔・24バイトの非接続広告で、平均して数µA の
