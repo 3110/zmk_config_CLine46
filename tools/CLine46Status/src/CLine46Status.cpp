@@ -57,7 +57,8 @@ class ScanBridge : public NimBLEAdvertisedDeviceCallbacks {
 CLine46Status::CLine46Status()
     : has_pending_(false), last_seen_ms_(0), pending_rssi_(0), mismatch_version_(0),
       available_(false), lost_reported_(true), rssi_(0), timeout_ms_(DEFAULT_TIMEOUT_MS),
-      scanning_(false), update_handler_(nullptr), lost_handler_(nullptr) {
+      idle_timeout_ms_(DEFAULT_IDLE_TIMEOUT_MS), scanning_(false), update_handler_(nullptr),
+      lost_handler_(nullptr) {
     memset(&current_, 0, sizeof(current_));
     memset(&pending_, 0, sizeof(pending_));
     memset(layer_name_, 0, sizeof(layer_name_));
@@ -191,7 +192,14 @@ uint32_t CLine46Status::ageMs() const {
     return millis() - last_seen_ms_;
 }
 
-bool CLine46Status::alive() const { return available_ && ageMs() <= timeout_ms_; }
+bool CLine46Status::alive() const {
+    if (!available_) {
+        return false;
+    }
+    /* 直近の状態がアイドルなら、広告の間隔そのものが長い */
+    uint32_t timeout = idle() ? idle_timeout_ms_ : timeout_ms_;
+    return ageMs() <= timeout;
+}
 
 const char *CLine46Status::osName() const {
     switch (os()) {

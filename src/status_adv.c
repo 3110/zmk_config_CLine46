@@ -311,6 +311,15 @@ static void build_payload(void) {
 #endif
     payload.peripheral_pct = peripheral_connected ? peripheral_pct : CLINE46_STATUS_PCT_UNKNOWN;
 
+#if IS_ENABLED(CONFIG_CLINE46_STATUS_PERIPHERAL_VOLTAGE)
+    /* 繋がった直後、ZMK の split 電池プロキシが一瞬 100% を報告することがある
+     * （左手が最初の測定を終える前の既定値）。こちらの中継で電圧が届くまでは
+     * 残量も出さないことで、満充電に見える 1 秒を避ける */
+    if (payload.peripheral_mv == CLINE46_STATUS_MV_UNKNOWN) {
+        payload.peripheral_pct = CLINE46_STATUS_PCT_UNKNOWN;
+    }
+#endif
+
     payload.os_default_layer = (current_os() << 4) | current_default_layer();
 
     int profile = zmk_ble_active_profile_index();

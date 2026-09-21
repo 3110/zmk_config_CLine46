@@ -39,8 +39,10 @@ class CLine46Status {
     typedef void (*Handler)(CLine46Status &status);
 
     /* 受信が途切れたと判断するまでの既定時間。キーボードは操作中1秒・
-     * アイドル中10秒ごとに広告を出す */
+     * アイドル中10秒ごとに広告を出すので、アイドル中は別の（長い）値を使う。
+     * 同じ15秒だと、広告を1回取りこぼしただけで見失った扱いになってしまう */
     static const uint32_t DEFAULT_TIMEOUT_MS = 15000;
+    static const uint32_t DEFAULT_IDLE_TIMEOUT_MS = 35000;
 
     CLine46Status();
 
@@ -60,8 +62,10 @@ class CLine46Status {
     void onUpdate(Handler handler) { update_handler_ = handler; }
     void onLost(Handler handler) { lost_handler_ = handler; }
 
-    /* 受信が途切れたと判断するまでの時間を変える */
+    /* 受信が途切れたと判断するまでの時間を変える。
+     * アイドル中（キーボードが広告を間引いている間）は idle 側が使われる */
     void setTimeout(uint32_t ms) { timeout_ms_ = ms; }
+    void setIdleTimeout(uint32_t ms) { idle_timeout_ms_ = ms; }
 
     /* --- 状態 --- */
 
@@ -156,6 +160,7 @@ class CLine46Status {
     bool lost_reported_;
     int rssi_;
     uint32_t timeout_ms_;
+    uint32_t idle_timeout_ms_;
     bool scanning_;
 
     Handler update_handler_;
