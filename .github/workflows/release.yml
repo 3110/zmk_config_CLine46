@@ -1,8 +1,8 @@
 name: Release
 
 # タグを打って、ファームウェア(uf2)を添付したリリースを作る。
-# Actions の「Run workflow」から実行する。タグは gh release create が
-# 対象コミット上に作るので、手元で git tag を打つ必要は無い。
+# Actions の「Run workflow」から、main ブランチを選んで実行する。タグは
+# gh release create が対象コミット上に作るので、手元で git tag を打つ必要は無い。
 on:
   workflow_dispatch:
     inputs:
@@ -50,6 +50,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+
+          # タグは main に打つ。develop や作業ブランチで実行しても動いてしまうので、
+          # ここで弾く（workflow_dispatch は実行するブランチを選べる）
+          if [ "$GITHUB_REF_NAME" != "main" ]; then
+            echo "::error::Release は main ブランチで実行してください（今回: $GITHUB_REF_NAME）"
+            exit 1
+          fi
 
           case "$VERSION" in
             v[0-9]*) ;;
