@@ -359,6 +359,42 @@ west build -s zmk/app -d build/left -b xiao_ble//zmk -- \
 
 ペアリングがおかしいときは、両手に `settings_reset` を書き込んでから左右のファームを焼き直します。
 
+## 外部機器への状態通知
+
+右手(Central)が、レイヤーや電池残量などを **BLE の非接続広告**に載せて流します。
+M5Stack などの受信側は**スキャンするだけ**でよく、接続もペアリングも要りません。
+BLE プロファイル(5個)も `CONFIG_BT_MAX_CONN` も消費しないので、PC との接続や
+DYA Studio の動作には影響しません。
+
+流しているもの(22バイト):
+
+| 内容 | 備考 |
+|---|---|
+| レイヤー番号と名前 | `display-name` の先頭4文字(BASE / SYMB / MOUS / SCRO) |
+| **右手の電池電圧(mV)** と残量(%) | NiMH は 1.02〜1.36V の狭い幅なので、%より電圧が実用的 |
+| 左手の電池残量(%) | **電圧は取れません**(ZMK の split 中継に含まれていないため) |
+| **OS 判別結果と現在の既定レイヤー** | 誤判定に気づける |
+| BLE プロファイル番号・接続状態・USB/BLE の出力先 | |
+| **Studio のロック解除中かどうか** | 解除しっぱなしに気づける |
+| 左右の接続状態、アイドル状態 | |
+| **起動からの経過分・リセット理由・watchdog の記録件数** | 「前回なぜ落ちたか」が常に見える |
+
+広告間隔は操作中1秒 / アイドル中10秒で、ディープスリープ中は止まります。
+電圧は ZMK が 60 秒ごとに測っている値を**読むだけ**なので、広告のために
+電池を余計に食うことはありません。
+
+> ZMK 自身もプロファイル用の広告と `&studio_unlock` 後の directed advertising を
+> 出すため、**拡張広告のセットをもう1つ**確保して(`CONFIG_BT_EXT_ADV`)、そちらに
+> 流しています。ZMK 側は従来どおりセット0を使うので互いに独立です。
+
+バイト配置と M5Stack(NimBLE)側の実装例は
+[docs/status-advertisement.md](docs/status-advertisement.md) にあります。
+`include/cline46/status_adv.h` は Zephyr に依存していないので、受信側へ
+そのままコピーして使えます。
+
+> **広告は平文です。** 誰でも受信できるので打鍵内容は載せていません。
+> Studio のロック状態も載せたくない場合は `flags` の bit3 を落としてください。
+
 ## リリース
 
 タグとリリースは **Actions の Release ワークフロー**で作ります。手元で `git tag` を
@@ -387,6 +423,10 @@ west build -s zmk/app -d build/left -b xiao_ble//zmk -- \
 |---|---|
 | `config/CLine46.keymap` | **キーマップ本体**。レイヤー、コンボの既定値、ビヘイビア |
 | `config/west.yml` | 依存リポジトリの一覧(west マニフェスト) |
+| `src/status_adv.c` | 状態を BLE 広告で流すコード([説明](#外部機器への状態通知)) |
+| `include/cline46/status_adv.h` | 広告に載せるデータの定義。**受信側にもそのまま使える** |
+| `CMakeLists.txt` / `Kconfig` | 上の C を Zephyr モジュールとしてビルドするための定義 |
+| `docs/status-advertisement.md` | 広告のバイト配置と M5Stack 側の実装例 |
 | `config/CLine46.json` | keymap-drawer 用の物理レイアウト定義 |
 | `build.yaml` | ビルド対象の board / shield マトリクス |
 | `keymap_drawer.config.yaml` | キーマップ図の描画設定 |

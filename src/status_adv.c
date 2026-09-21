@@ -33,7 +33,9 @@
 #include <zmk/endpoints.h>
 #include <zmk/event_manager.h>
 #include <zmk/keymap.h>
+#if IS_ENABLED(CONFIG_ZMK_USB)
 #include <zmk/usb.h>
+#endif
 
 #include <zmk/events/activity_state_changed.h>
 #include <zmk/events/battery_state_changed.h>
@@ -179,12 +181,14 @@ static uint8_t current_default_layer(void) {
 static uint8_t current_flags(void) {
     uint8_t flags = 0;
 
+#if IS_ENABLED(CONFIG_ZMK_USB)
     if (zmk_usb_is_powered()) {
         flags |= CLINE46_STATUS_FLAG_USB_POWERED;
     }
     if (zmk_usb_is_hid_ready()) {
         flags |= CLINE46_STATUS_FLAG_USB_HID_READY;
     }
+#endif
     if (zmk_endpoint_get_selected().transport == ZMK_TRANSPORT_BLE) {
         flags |= CLINE46_STATUS_FLAG_OUTPUT_BLE;
     }

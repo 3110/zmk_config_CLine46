@@ -1,0 +1,144 @@
+# ステータスブロードキャスト（BLE 広告）
+
+右手（Central）が自分の状態を BLE の**非接続広告**に載せて流します。受信側は
+スキャンするだけでよく、接続もペアリングも要りません。BLE プロファイル（5個）も
+`CONFIG_BT_MAX_CONN` も消費しないので、PC との接続や DYA Studio の動作に影響しません。
+
+- 有効化: `CLine46_R.conf` の `CONFIG_CLINE46_STATUS_ADV=y`
+- 実装: `src/status_adv.c` / 定義: `include/cline46/status_adv.h`
+- 広告間隔: 操作中 1秒 / アイドル中 10秒（Kconfig で変更可）。ディープスリープ中は停止
+
+## 仕組み
+
+ZMK 自身もプロファイル用の広告と、`&studio_unlock` 後の directed advertising を
+出します。レガシー広告は同時に1つしか出せないため、**拡張広告のセットをもう1つ
+確保**して（`CONFIG_BT_EXT_ADV` / `BT_EXT_ADV_MAX_ADV_SET=2`）、そこにレガシーの
+非接続 PDU を流しています。ZMK 側は従来どおりセット0を使うので、両者は独立です。
+
+アドレスは非接続広告の既定（non-resolvable random address）で、一定時間ごとに
+変わります。**受信側は MAC ではなくマジック（`0xFFFF` + `"CL"`）で絞り込んでください。**
+同じ広告を出すキーボードが複数ある場合は `keyboard_id`（個体ごとに固定）で区別できます。
+
+## パケットの形
+
+AD 構造は Manufacturer Specific Data（type `0xFF`）1つだけです。
+
+```
+AD length (1) | AD type 0xFF (1) | payload (22)  = 24 バイト（31 バイト以内）
+```
+
+payload（`struct cline46_status_adv_payload`、**すべてリトルエンディアン**）:
+
+| offset | size | 名前 | 内容 |
+|---|---|---|---|
+| 0 | 2 | `company_id` | `0xFFFF`（SIG が内部用に予約している ID） |
+| 2 | 2 | `magic` | `'C'`, `'L'` |
+| 4 | 1 | `version` | ペイロード形式。現在 `1` |
+| 5 | 1 | `keyboard_id` | 個体識別（hwinfo のデバイスIDの先頭1バイト） |
+| 6 | 1 | `layer_index` | 最上位のアクティブレイヤー番号（0=BASE） |
+| 7 | 4 | `layer_name` | `display-name` の先頭4文字。4文字ちょうどのときは**終端なし** |
+| 11 | 2 | `central_mv` | 右手の電池電圧 mV（`0` = 不明） |
+| 13 | 1 | `central_pct` | 右手の電池残量 %（`0xFF` = 不明） |
+| 14 | 1 | `peripheral_pct` | 左手の電池残量 %（`0xFF` = 不明・未接続） |
+| 15 | 1 | `os_default_layer` | 上位4bit = OS 判別結果、下位4bit = 既定レイヤー（`0x0F` = 未設定） |
+| 16 | 1 | `profile` | bit7 接続済み / bit6 未ペアリング / bit2-0 プロファイル番号 |
+| 17 | 1 | `flags` | 下表 |
+| 18 | 2 | `uptime_min` | 起動からの経過分（65535 で頭打ち） |
+| 20 | 1 | `reset_reason` | 下表 |
+| 21 | 1 | `incident_count` | watchdog に残っている記録の件数 |
+
+### flags
+
+| bit | 意味 |
+|---|---|
+| 0 | USB から給電されている |
+| 1 | USB HID が使える状態 |
+| 2 | キー入力の出力先が BLE（落ちていれば USB） |
+| 3 | **ZMK Studio がロック解除中** |
+| 4 | 左手と接続できている |
+| 5 | アイドル状態 |
+
+### OS 判別結果（`os_default_layer >> 4`）
+
+`0` unknown / `1` Windows / `2` macOS / `3` Linux / `4` iOS / `5` Android
+
+### reset_reason
+
+`0` 不明 / `1` 電源投入 / `2` リセットピン / `3` ソフトリセット（`&sys_reset`・書き込み）/
+`4` **watchdog による再起動** / `5` 電圧低下 / `6` ディープスリープからの復帰 /
+`7` デバッガ / `8` その他
+
+## 受信側（M5Stack / ESP32）の実装例
+
+NimBLE-Arduino でのスキャン例です。`include/cline46/status_adv.h` をそのまま
+コピーして使えます（Zephyr 依存はありません）。
+
+```cpp
+#include <NimBLEDevice.h>
+#include "status_adv.h"   // include/cline46/status_adv.h をコピー
+
+static cline46_status_adv_payload g_status;
+static uint32_t g_last_seen_ms = 0;
+
+class ScanCallbacks : public NimBLEScanCallbacks {
+  void onResult(const NimBLEAdvertisedDevice* dev) override {
+    if (!dev->haveManufacturerData()) return;
+    std::string md = dev->getManufacturerData();
+    if (md.size() < sizeof(cline46_status_adv_payload)) return;
+
+    cline46_status_adv_payload p;
+    memcpy(&p, md.data(), sizeof(p));
+    if (p.company_id != CLINE46_STATUS_ADV_COMPANY_ID) return;
+    if (p.magic[0] != CLINE46_STATUS_ADV_MAGIC_0) return;
+    if (p.magic[1] != CLINE46_STATUS_ADV_MAGIC_1) return;
+    if (p.version != CLINE46_STATUS_ADV_VERSION) return;
+
+    g_status = p;
+    g_last_seen_ms = millis();
+  }
+};
+
+void setup() {
+  NimBLEDevice::init("");
+  NimBLEScan* scan = NimBLEDevice::getScan();
+  scan->setScanCallbacks(new ScanCallbacks(), /*wantDuplicates=*/true);
+  scan->setActiveScan(false);   // 非接続広告なのでスキャン応答は要らない
+  scan->setInterval(100);
+  scan->setWindow(99);
+  scan->start(0, false);        // 連続スキャン
+}
+
+void loop() {
+  if (millis() - g_last_seen_ms > 5000) {
+    // 5 秒受信が無い = キーボードがスリープ中か圏外
+    return;
+  }
+
+  char layer[CLINE46_STATUS_LAYER_NAME_LEN + 1] = {0};
+  memcpy(layer, g_status.layer_name, CLINE46_STATUS_LAYER_NAME_LEN);
+
+  Serial.printf("%s  R:%umV/%u%%  L:%u%%  OS:%u  prof:%u  up:%umin\n",
+                layer, g_status.central_mv, g_status.central_pct,
+                g_status.peripheral_pct, g_status.os_default_layer >> 4,
+                g_status.profile & CLINE46_STATUS_PROFILE_INDEX_MASK,
+                g_status.uptime_min);
+}
+```
+
+**注意**: `setScanCallbacks(..., wantDuplicates=true)` にしないと、同じアドレスからの
+2 回目以降の広告が捨てられて更新が止まります。
+
+## 制限と注意
+
+- **左手の電池は % のみ**です。電圧(mV)は ZMK の split 中継に含まれておらず
+  （`zmk_peripheral_battery_state_changed` は `state_of_charge` だけ）、Central 側から
+  読む手段がありません。左手の電圧も欲しい場合は `CONFIG_ZMK_SPLIT_RELAY_EVENT` を
+  使った独自の中継を書く必要があります
+- **電圧は ZMK が定期取得した値の読み出し**です。`CONFIG_ZMK_BATTERY_REPORT_INTERVAL_S`
+  （既定60秒）ごとにしか更新されず、起動直後の 1 回目までは `0`（不明）になります。
+  広告のためだけに ADC を回さないのは電池を食わないためです
+- **広告は平文**です。誰でも受信できるので、打鍵内容は載せていません。ただし
+  `flags` の bit3（Studio ロック解除中）は「今このキーボードは設定変更を受け付ける」
+  という情報でもあるので、それが気になる場合はこのビットを落としてください
+- `reset_reason` は起動時に `hwinfo_get_reset_cause()` を読んだ結果です。他のモジュールが
+  先に原因をクリアしていると「不明」になります
