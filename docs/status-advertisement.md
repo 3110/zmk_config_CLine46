@@ -38,7 +38,8 @@ ZMK 自身もプロファイル用の広告と、`&studio_unlock` 後の directe
 **Status Broadcast** として出るので、好きなキーに移せます。
 
 - 止めている間は `bt_le_ext_adv_stop()` で広告そのものが出なくなります。受信側は
-  ライブラリのアイドルタイムアウト（35秒）を過ぎると「ロスト」表示になります
+  ライブラリのアイドルタイムアウト（35秒）を過ぎると受信が途切れた扱いになります
+  （AtomS3R 版の表示は `NO SIGNAL`）。オンに戻すと数秒で復帰します
 - **切り替えた状態は保存され、次の起動でも引き継がれます**
   （`CONFIG_CLINE46_STATUS_ADV_PERSIST`、既定 y）。
   保存が無いときにどちらで始めるかは `CONFIG_CLINE46_STATUS_ADV_DEFAULT_ON`（既定 y）
