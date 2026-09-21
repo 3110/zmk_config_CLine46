@@ -56,11 +56,19 @@ static const int16_t ROW_Y0 = 18;
 static const int16_t ROW_H = 15;
 
 /* 画面3のグラフ。電圧は NiMH 単セルの範囲で固定目盛りにして、
- * 減り方の傾きがそのまま見えるようにする */
+ * 減り方の傾きがそのまま見えるようにする。
+ *
+ * 縦の割り当て: 見出し 0-16 / 3行 18-64 / 枠 66-110 / 凡例 111-127。
+ * Font2 は高さ 16px なので、凡例の行は 112 より下に置けない
+ * （下の static_assert で見張っている） */
+static const int16_t TEXT_H = 16;
 static const int16_t GRAPH_X = 2;
-static const int16_t GRAPH_Y = 68;
+static const int16_t GRAPH_Y = 67;
 static const int16_t GRAPH_W = 124;
-static const int16_t GRAPH_H = 46;
+static const int16_t GRAPH_H = 42;
+static const int16_t GRAPH_LEGEND_Y = GRAPH_Y + GRAPH_H + 2;
+static_assert(GRAPH_LEGEND_Y + TEXT_H <= 128, "凡例が画面の下からはみ出している");
+static_assert(GRAPH_Y - 1 >= 18 + 3 * 15, "グラフの枠が3行目に重なっている");
 static const uint16_t GRAPH_MIN_MV = 1000;
 static const uint16_t GRAPH_MAX_MV = 1400;
 static const uint16_t GRAPH_LOW_MV = 1050; /* この線を割ったら交換どき */
@@ -388,12 +396,12 @@ static void drawHealth() {
   canvas.setFont(&fonts::Font2);
   canvas.setTextDatum(top_left);
   canvas.setTextColor(TFT_CYAN);
-  canvas.drawString("L", 2, GRAPH_Y + GRAPH_H + 2);
+  canvas.drawString("L", 2, GRAPH_LEGEND_Y);
   canvas.setTextColor(TFT_GREEN);
-  canvas.drawString("R", 16, GRAPH_Y + GRAPH_H + 2);
+  canvas.drawString("R", 16, GRAPH_LEGEND_Y);
   canvas.setTextDatum(top_right);
   canvas.setTextColor(TFT_DARKGREY);
-  canvas.drawString("1.0-1.4V/2h", SCREEN_W - 2, GRAPH_Y + GRAPH_H + 2);
+  canvas.drawString("1.0-1.4V/2h", SCREEN_W - 2, GRAPH_LEGEND_Y);
 
   canvas.pushSprite(0, 0);
 }
