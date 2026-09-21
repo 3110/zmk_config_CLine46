@@ -26,4 +26,8 @@ ZMK_EVENT_DECLARE(cline46_peripheral_voltage_changed);
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 /* 直近に中継されてきた左手の電圧。未受信・切断中は 0（不明） */
 uint16_t cline46_peripheral_voltage_mv(void);
+
+/* 覚えている値を捨てる。左手が切れたときに呼ぶ（再接続直後に古い値を
+ * 出さないため。新しい値は左手が繋ぎ直して数秒で送ってくる） */
+void cline46_peripheral_voltage_reset(void);
 #endif

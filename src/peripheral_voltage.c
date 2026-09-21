@@ -40,6 +40,8 @@ static uint16_t peripheral_mv;
 
 uint16_t cline46_peripheral_voltage_mv(void) { return peripheral_mv; }
 
+void cline46_peripheral_voltage_reset(void) { peripheral_mv = 0; }
+
 ZMK_RELAY_EVENT_HANDLE(cline46_peripheral_voltage_changed, clv, source);
 
 /* 切断したときに古い値を出し続けない仕掛けは status_adv.c 側にある

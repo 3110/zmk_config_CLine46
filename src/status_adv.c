@@ -86,6 +86,11 @@ static struct cline46_status_adv_payload payload;
 
 /* イベントでしか取れない値はここに持っておく */
 static uint8_t peripheral_pct = CLINE46_STATUS_PCT_UNKNOWN;
+/* ZMK が最初の測定を終えるまで zmk_battery_state_of_charge() は 0 を返す。
+ * 残量0%と見分けが付かないので、測定を見るまでは「不明」にする */
+static bool central_battery_seen;
+/* 左手が切れた瞬間に覚えている値を捨てるため、前回の接続状態を持つ */
+static bool peripheral_was_connected;
 static uint8_t reset_reason = CLINE46_STATUS_RESET_UNKNOWN;
 static uint8_t keyboard_id;
 
@@ -116,7 +121,9 @@ static uint8_t map_reset_reason(uint32_t cause) {
     if (cause & RESET_POR) {
         return CLINE46_STATUS_RESET_POWER_ON;
     }
-    return cause ? CLINE46_STATUS_RESET_OTHER : CLINE46_STATUS_RESET_UNKNOWN;
+    /* nRF52 は電源投入ではどのビットも立たない（RESETREAS が 0 のまま）。
+     * hwinfo が値を返せている以上、0 は「電源投入」と読むのが妥当 */
+    return cause ? CLINE46_STATUS_RESET_OTHER : CLINE46_STATUS_RESET_POWER_ON;
 }
 
 /*
@@ -187,8 +194,14 @@ static uint8_t reason_from_watchdog(void) {
 
 static uint8_t current_reset_reason(void) {
 #if IS_ENABLED(CONFIG_ZMK_WATCHDOG)
-    if (reset_reason == CLINE46_STATUS_RESET_UNKNOWN) {
-        return reason_from_watchdog();
+    /* watchdog による再起動なら、記録を見てフリーズかフォールトかまで分かる。
+     * hwinfo が使えない環境（-ENOSYS）でも記録があれば手掛かりになる */
+    if (reset_reason == CLINE46_STATUS_RESET_WATCHDOG ||
+        reset_reason == CLINE46_STATUS_RESET_UNKNOWN) {
+        uint8_t from_record = reason_from_watchdog();
+        if (from_record != CLINE46_STATUS_RESET_UNKNOWN) {
+            return from_record;
+        }
     }
 #endif
     return reset_reason;
@@ -276,10 +289,20 @@ static void build_payload(void) {
     fill_layer();
 
     payload.central_mv = cline46_battery_mv();
-    payload.central_pct = zmk_battery_state_of_charge();
+    payload.central_pct =
+        central_battery_seen ? zmk_battery_state_of_charge() : CLINE46_STATUS_PCT_UNKNOWN;
 
-    /* 左手が切れているときに古い値を出し続けないよう、まとめて不明にする */
+    /* 左手が切れているときに古い値を出し続けないよう、まとめて不明にする。
+     * 切れた瞬間に覚えている電圧も捨てる（再接続の直後に一瞬だけ
+     * 古い値が出るのを防ぐ。新しい値は数秒で届く） */
     bool peripheral_connected = split_peripheral_connected();
+    if (peripheral_was_connected && !peripheral_connected) {
+        peripheral_pct = CLINE46_STATUS_PCT_UNKNOWN;
+#if IS_ENABLED(CONFIG_CLINE46_STATUS_PERIPHERAL_VOLTAGE)
+        cline46_peripheral_voltage_reset();
+#endif
+    }
+    peripheral_was_connected = peripheral_connected;
 #if IS_ENABLED(CONFIG_CLINE46_STATUS_PERIPHERAL_VOLTAGE)
     payload.peripheral_mv =
         peripheral_connected ? cline46_peripheral_voltage_mv() : CLINE46_STATUS_MV_UNKNOWN;
@@ -411,6 +434,12 @@ static void adv_work_handler(struct k_work *work) {
 static void refresh_soon(void) { k_work_reschedule(&adv_work, K_MSEC(REFRESH_DEBOUNCE_MS)); }
 
 static int status_adv_listener(const zmk_event_t *eh) {
+    if (as_zmk_battery_state_changed(eh) != NULL) {
+        central_battery_seen = true;
+        refresh_soon();
+        return ZMK_EV_EVENT_BUBBLE;
+    }
+
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
     const struct zmk_peripheral_battery_state_changed *peripheral_battery =
         as_zmk_peripheral_battery_state_changed(eh);
