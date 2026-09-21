@@ -81,7 +81,13 @@ payload（`struct cline46_status_adv_payload`、**すべてリトルエンディ
 `4` **watchdog による再起動** / `5` 電圧低下 / `6` ディープスリープからの復帰 /
 `7` デバッガ / `8` その他
 
-## 受信側（M5Stack / ESP32）の実装例
+## 受信側（M5Stack / ESP32）
+
+そのまま書き込める M5Stack 用のスケッチを
+[tools/m5stack-status-monitor](../tools/m5stack-status-monitor) に置いてあります
+（シリアルに出すだけなので、BLE が載っている M5Stack ならどの機種でも動きます）。
+
+### 実装例
 
 NimBLE-Arduino でのスキャン例です。`include/cline46/status_adv.h` をそのまま
 コピーして使えます（Zephyr 依存はありません）。
