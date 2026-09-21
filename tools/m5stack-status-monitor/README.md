@@ -32,7 +32,7 @@ L1:SYMB  右 1284mV/72%  左 1301mV/78%  UH-L--  OS:macOS(既定4)  prof:0接続
 を submodule として使っています。**初回は submodule の取得が必要**です。
 
 ```sh
-git submodule update --init tools/m5stack-status-monitor/config
+git submodule update --init tools/config
 
 cd tools/m5stack-status-monitor
 pio run -e m5stack-stop-watch                      # ビルドだけ
@@ -51,7 +51,7 @@ pio run -e m5stack-stop-watch -t upload -t monitor # 書き込んでシリアル
 | `m5stick-c-plus2` | M5StickC Plus2 |
 | `m5stack-atoms3` | ATOMS3 |
 
-他の機種を足すときは、共通 ini（`config/platformio-m5stack.ini`）にある
+他の機種を足すときは、共通 ini（`../config/platformio-m5stack.ini`）にある
 セクション名をそのまま `extends` に書きます。
 
 ```ini
@@ -59,7 +59,7 @@ pio run -e m5stack-stop-watch -t upload -t monitor # 書き込んでシリアル
 extends = m5stack-cardputer
 ```
 
-共通設定を更新するには `git submodule update --remote tools/m5stack-status-monitor/config`。
+共通設定を更新するには `git submodule update --remote tools/config`。
 
 ### Arduino IDE で使う場合
 
@@ -73,7 +73,7 @@ S3 系の機種では「USB CDC On Boot」を Enabled にしないとシリア�
 | パス | 内容 |
 |---|---|
 | `platformio.ini` | プロジェクト固有の設定。機種は共通 ini の `extends` だけ |
-| `config/` | submodule（機種ごとの設定の共通リポジトリ） |
+| `../config/` | submodule（機種ごとの設定の共通リポジトリ） |
 | `src/main.cpp` | ライブラリを呼ぶだけの本体 |
 
 ## つまずきやすいところ

@@ -71,8 +71,15 @@ lib_deps =
     symlink://../CLine46Status   ; パスは自分のプロジェクトからの相対
 ```
 
-このリポジトリには、そのまま使えるプロジェクトが
-[../m5stack-status-monitor](../m5stack-status-monitor) にあります。
+このリポジトリには、そのまま使えるプロジェクトが2つあります。
+
+| プロジェクト | 内容 |
+|---|---|
+| [../m5stack-status-monitor](../m5stack-status-monitor) | シリアルに出すだけ（機種を選ばない） |
+| [../atoms3r-status-display](../atoms3r-status-display) | AtomS3R / AtomS3 の画面に出す |
+
+同じものが `examples/SerialMonitor` と `examples/AtomS3RHome` に入っています
+（Arduino IDE 用）。
 
 ## ファーム側との同期
 
