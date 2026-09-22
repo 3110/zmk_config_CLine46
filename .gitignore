@@ -4,3 +4,7 @@ tools/atoms3r-status-display/.vscode/launch.json
 tools/m5stack-status-monitor/.vscode/c_cpp_properties.json
 tools/m5stack-status-monitor/.vscode/extensions.json
 tools/m5stack-status-monitor/.vscode/launch.json
+
+# PlatformIO のビルド成果物
+tools/atoms3r-status-display/.pio/
+tools/m5stack-status-monitor/.pio/

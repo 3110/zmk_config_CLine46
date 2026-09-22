@@ -74,6 +74,7 @@ S3 系の機種では「USB CDC On Boot」を Enabled にしないとシリア�
 | パス | 内容 |
 |---|---|
 | `platformio.ini` | プロジェクト固有の設定。機種は共通 ini の `extends` だけ |
+| `platformio-offline.ini` | PlatformIO レジストリに出られない環境用の上書き設定（[説明](../../docs/platformio-without-registry.md)） |
 | `../config/` | submodule（機種ごとの設定の共通リポジトリ） |
 | `src/main.cpp` | ライブラリを呼ぶだけの本体 |
 

@@ -46,6 +46,8 @@
 | `tools/m5stack-status-monitor/` | シリアルに出すだけの PlatformIO プロジェクト |
 | `tools/atoms3r-status-display/` | AtomS3R / AtomS3 の画面に出す PlatformIO プロジェクト |
 | `tools/config/` | 機種ごとの PlatformIO 設定（submodule） |
+| `tools/*/platformio-offline.ini` | レジストリを使わずビルドするための上書き設定（[説明](platformio-without-registry.md)） |
+| `tools/pio-setup-no-registry.sh` | 上の ini を使うための PlatformIO 準備スクリプト |
 
 ## 状態広告の実装
 
