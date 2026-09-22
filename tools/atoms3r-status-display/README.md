@@ -123,5 +123,6 @@ M5Unified と NimBLE-Arduino もライブラリマネージャから入れてく
 | パス | 内容 |
 |---|---|
 | `platformio.ini` | 機種は共通 ini（`../config/`）の `m5stack-atoms3r` と `m5unified` を extends |
+| `platformio-offline.ini` | PlatformIO レジストリに出られない環境用の上書き設定（[説明](../../docs/platformio-without-registry.md)） |
 | `src/main.cpp` | ライブラリのサンプルを include するだけ |
 | `../CLine46Status/examples/AtomS3RHome/` | **画面の実装本体** |

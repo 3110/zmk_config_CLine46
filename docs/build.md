@@ -189,3 +189,11 @@ pio run -e m5stack-atoms3r -t upload -t monitor
 > ```sh
 > cp include/cline46/status_adv.h tools/CLine46Status/src/cline46/status_adv.h
 > ```
+
+### PlatformIO レジストリに出られない場合
+
+サンドボックスなど `*.platformio.org` が遮断されているネットワークでは、
+上の `pio run` がパッケージ解決の時点で落ちます。GitHub だけから取ってくる
+上書き設定を用意してあるので、
+[PlatformIO レジストリを使わずに M5Stack 側をビルドする](platformio-without-registry.md)
+を見てください。手元の PC で普通にビルドできている場合は関係ありません。
