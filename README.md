@@ -118,6 +118,10 @@ git submodule update --init tools/config
 # 画面に出す（AtomS3R / AtomS3）
 cd tools/atoms3r-status-display
 pio run -e m5stack-atoms3r -t upload -t monitor
+
+# キーマップを出す（Tab5）
+cd tools/tab5-keymap-viewer
+pio run -e m5stack-tab5 -t upload -t monitor
 ```
 
 シリアルに出すだけなら [tools/m5stack-status-monitor](tools/m5stack-status-monitor) を使います
@@ -215,6 +219,7 @@ SCROLL レイヤーで右手上段の `I` を押すたびに切り替わりま�
 | [tools/CLine46Status](tools/CLine46Status) | 受信用の Arduino ライブラリ（表示は含まない） |
 | [tools/atoms3r-status-display](tools/atoms3r-status-display) | AtomS3R / AtomS3 の画面に出す |
 | [tools/m5stack-status-monitor](tools/m5stack-status-monitor) | シリアルに出す（機種を選ばない） |
+| [tools/tab5-keymap-viewer](tools/tab5-keymap-viewer) | Tab5 の画面に今のレイヤーのキーマップを出す（配置を覚える用） |
 
 ## このリポジトリについて
 

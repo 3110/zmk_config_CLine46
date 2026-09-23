@@ -11,8 +11,24 @@
 
 #include "CLine46Status.h"
 
-#include <NimBLEDevice.h>
 #include <string.h>
+
+/* ESP32-P4（Tab5 など）は BLE を無線用の別チップ（ESP32-C6）に任せていて、
+ * NimBLE-Arduino がまだ対応していない。そこで P4 では Arduino コア内蔵の
+ * BLE ライブラリ（ESP-Hosted 経由で C6 を使う）で受信する。
+ * それ以外でも CLINE46_STATUS_USE_ARDUINO_BLE を定義すればコア内蔵のほうを使う */
+#if defined(CONFIG_IDF_TARGET_ESP32P4) || defined(CLINE46_STATUS_USE_ARDUINO_BLE)
+#define CL_ARDUINO_BLE 1
+#else
+#define CL_ARDUINO_BLE 0
+#endif
+
+#if CL_ARDUINO_BLE
+#include <BLEDevice.h>
+#include <BLEScan.h>
+#define CL_NIMBLE_V2 0
+#else
+#include <NimBLEDevice.h>
 
 /* NimBLE-Arduino 2.x 以降には NimBLECppVersion.h がある。1.4 系には無い */
 #if __has_include(<NimBLECppVersion.h>)
@@ -27,10 +43,41 @@ typedef const NimBLEAdvertisedDevice CLAdvertisedDevice;
 #else
 typedef NimBLEAdvertisedDevice CLAdvertisedDevice;
 #endif
+#endif /* CL_ARDUINO_BLE */
+
+#if CL_ARDUINO_BLE
+/* コア内蔵の BLE は見かけた機器を無期限に溜め込む（上限を変える手段が無い）。
+ * キーボードのアドレスは定期的に変わるので、放っておくと増え続ける。
+ * そこで無期限ではなく一定時間ずつスキャンし、終わるたびに捨ててかけ直す。
+ * 捨てるのはスキャンが終わってから（BLE のタスクが触らなくなってから）にする */
+static const uint32_t CL_SCAN_CHUNK_S = 30;
+/* かけ直しに失敗したときに次に試すまでの間隔 */
+static const uint32_t CL_SCAN_RETRY_MS = 1000;
+static uint32_t cl_scan_tried_ms = 0;
+static bool cl_scan_wanted = false;
+#endif
 
 namespace {
 
 /* 受信した広告を CLine46Status へ渡すだけの薄いコールバック */
+#if CL_ARDUINO_BLE
+class ScanBridge : public BLEAdvertisedDeviceCallbacks {
+  public:
+    explicit ScanBridge(CLine46Status &owner) : owner_(owner) {}
+
+    void onResult(BLEAdvertisedDevice device) override {
+        if (!device.haveManufacturerData()) {
+            return;
+        }
+        String data = device.getManufacturerData();
+        owner_.ingest(reinterpret_cast<const uint8_t *>(data.c_str()), data.length(),
+                      device.getRSSI());
+    }
+
+  private:
+    CLine46Status &owner_;
+};
+#else
 #if CL_NIMBLE_V2
 class ScanBridge : public NimBLEScanCallbacks {
 #else
@@ -51,6 +98,7 @@ class ScanBridge : public NimBLEAdvertisedDeviceCallbacks {
   private:
     CLine46Status &owner_;
 };
+#endif /* CL_ARDUINO_BLE */
 
 } // namespace
 
@@ -71,6 +119,11 @@ bool CLine46Status::begin() {
         return true;
     }
 
+#if CL_ARDUINO_BLE
+    if (!BLEDevice::getInitialized() && !BLEDevice::init("")) {
+        return false;
+    }
+#else
     /* 他でも NimBLE を使っている場合は、そちらの初期化を尊重する。
      * 1.4 系は関数名も戻り値も違う（getInitialized / init は void） */
 #if CL_NIMBLE_V2
@@ -82,13 +135,18 @@ bool CLine46Status::begin() {
         NimBLEDevice::init("");
     }
 #endif
+#endif /* CL_ARDUINO_BLE */
 
     static ScanBridge *bridge = nullptr;
     if (bridge == nullptr) {
         bridge = new ScanBridge(*this);
     }
 
+#if CL_ARDUINO_BLE
+    BLEScan *scan = BLEDevice::getScan();
+#else
     NimBLEScan *scan = NimBLEDevice::getScan();
+#endif
     if (scan == nullptr) {
         return false;
     }
@@ -99,7 +157,13 @@ bool CLine46Status::begin() {
     scan->setInterval(100);
     scan->setWindow(99);
 
-#if CL_NIMBLE_V2
+#if CL_ARDUINO_BLE
+    /* 重複フィルタを切らないと、2回目以降の広告が捨てられて更新が止まる */
+    scan->setAdvertisedDeviceCallbacks(bridge, /*wantDuplicates=*/true);
+    cl_scan_wanted = true;
+    cl_scan_tried_ms = millis();
+    scanning_ = scan->start(CL_SCAN_CHUNK_S, nullptr, false); /* 続きは poll() でかけ直す */
+#elif CL_NIMBLE_V2
     /* 重複フィルタを切らないと、2回目以降の広告が捨てられて更新が止まる */
     scan->setScanCallbacks(bridge, /*wantDuplicates=*/true);
     scan->setDuplicateFilter(false);
@@ -113,10 +177,17 @@ bool CLine46Status::begin() {
 }
 
 void CLine46Status::end() {
+#if CL_ARDUINO_BLE
+    cl_scan_wanted = false;
+#endif
     if (!scanning_) {
         return;
     }
+#if CL_ARDUINO_BLE
+    BLEScan *scan = BLEDevice::getScan();
+#else
     NimBLEScan *scan = NimBLEDevice::getScan();
+#endif
     if (scan != nullptr) {
         scan->stop();
     }
@@ -155,6 +226,19 @@ void CLine46Status::ingest(const uint8_t *data, size_t size, int rssi) {
 
 bool CLine46Status::poll() {
     bool updated = false;
+
+#if CL_ARDUINO_BLE
+    /* 一区切りのスキャンが終わっていたら、溜まった機器を捨ててすぐかけ直す
+     * （上の CL_SCAN_CHUNK_S）。前回のかけ直しに失敗していたら少し待ってから試す */
+    if (cl_scan_wanted && (scanning_ || millis() - cl_scan_tried_ms >= CL_SCAN_RETRY_MS)) {
+        BLEScan *scan = BLEDevice::getScan();
+        if (!scan->isScanning()) {
+            scan->clearResults();
+            cl_scan_tried_ms = millis();
+            scanning_ = scan->start(CL_SCAN_CHUNK_S, nullptr, false);
+        }
+    }
+#endif
 
     if (has_pending_) {
         has_pending_ = false;
